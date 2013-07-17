@@ -1,0 +1,89 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>	
+<link rel="shortcut icon" type="image/ico" href="img/favicon.ico" />	
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<title>EnergyCAM on Raspberry Pi</title>
+
+<script  type="text/javascript" src="script/dygraph/dygraph-layout.js"> </script>
+<script  type="text/javascript" src="script/dygraph/dygraph-canvas.js"> </script>
+<script  type="text/javascript" src="script/dygraph/dygraph.js"> </script>
+<script  type="text/javascript" src="script/dygraph/dygraph-utils.js"> </script>
+<script  type="text/javascript" src="script/dygraph/dygraph-gviz.js"> </script>
+<script  type="text/javascript" src="script/dygraph/dygraph-interaction-model.js"> </script>
+<script  type="text/javascript" src="script/dygraph/dygraph-range-selector.js"> </script>
+<script  type="text/javascript" src="script/dygraph/dygraph-tickers.js"> </script>
+<script  type="text/javascript" src="script/dygraph/dashed-canvas.js"> </script>
+<script  type="text/javascript" src="script/dygraph/rgbcolor/rgbcolor.js"> </script>
+<script  type="text/javascript" src="script/dygraph/strftime/strftime-min.js"> </script>
+<script  type="text/javascript" src="script/dygraph/plugins/base.js"> </script>
+<script  type="text/javascript" src="script/dygraph/plugins/annotations.js"> </script>
+<script  type="text/javascript" src="script/dygraph/plugins/axes.js"> </script>
+<script  type="text/javascript" src="script/dygraph/plugins/chart-labels.js"> </script>
+<script  type="text/javascript" src="script/dygraph/plugins/grid.js"> </script>
+<script  type="text/javascript" src="script/dygraph/plugins/legend.js"> </script>
+<script  type="text/javascript" src="script/dygraph/plugins/install.js"> </script>
+
+
+<script type="text/javascript">
+function ShowECPIGraph(param) {
+g = new Dygraph(
+				    // containing div
+				    document.getElementById("ecpiwwM1"), "data/ecpiwwM1.csv",
+				    {
+				    	legend:"always",
+				    	title:"Meter #1",
+				    	ylabel:"Energy",
+				    	labelsDivStyles:{'text-align':"right",background:"none"},strokeWidth:1.5
+				    }
+				  );
+				  
+g = new Dygraph(
+				    // containing div
+				    document.getElementById("ecpiwwM2"), "data/ecpiwwM2.csv",
+				    {
+				    	legend:"always",
+				    	title:"Meter #2",
+				    	ylabel:"Energy",
+				    	labelsDivStyles:{'text-align':"right",background:"none"},strokeWidth:1.5
+				    }
+				  );
+				  
+g = new Dygraph(				  
+				    // containing div
+				    document.getElementById("ecpiwwM3"), "data/ecpiwwM3.csv",
+				    {
+				    	legend:"always",
+				    	title:"Meter #3",
+				    	ylabel:"Energy",
+				    	labelsDivStyles:{'text-align':"right",background:"none"},strokeWidth:1.5
+				    }
+				  );				  
+		
+  } 
+</script> 
+</head>
+
+<!-- Logo -->
+<div id="logo">
+<img src="img/ecpiww.png" width="800" height="120" class="logo" alt="Main Logo" />
+</div>
+   
+<div id="ecpiwwM1" style="width:800px; height:400px;"></div>
+<Br /> 
+<div id="ecpiwwM2" style="width:800px; height:400px;"></div>
+<Br /> 
+<div id="ecpiwwM3" style="width:800px; height:400px;"></div>
+<Br /> 
+<Br /> 
+</div>
+
+
+<script type="text/javascript">
+	
+ShowECPIGraph();
+
+</script> 
+
+</body>
+</html>

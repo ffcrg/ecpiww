@@ -1,0 +1,142 @@
+/////////////////////////
+// Config raspberry pi //
+/////////////////////////
+
+//download Raspbian “wheezy” from http://www.raspberrypi.org/downloads
+use raspi-config to
+	- expand_rootfs 	-> expand root partition
+	- change_pass 		-> change password for "pi" user
+	- change_timezone
+	- configure_keyboards
+	- boot-behavior 	-> don't start desktop on boot
+
+//use a keyboard and monitor on your raspberry or connect from your PC with a SSH Client (http://www.putty.org/)
+
+//you should change the default password of the pi user
+$passwd
+
+//you can also add a new user and enable this user with sudo privileges
+$sudo adduser username
+$sudo nano /etc/group
+
+
+//Install apache,git and screen (http://raspi.tv/2012/using-screen-with-raspberry-pi-to-avoid-leaving-ssh-sessions-open)
+$sudo apt-get update
+$sudo apt-get install apache2
+$sudo apt-get install git
+$sudo apt-get install screen  (screen bash ; ctrl a,d - run app in additional terminal)
+
+
+
+///////////////////////////////////////
+// connect the raspberry pi to a wLAN//
+///////////////////////////////////////
+// if you have connected a monitor and keyboard to your raspberry 
+// - start the GUI with startx
+// - use wpa_gui to setup the WLAN access (http://learn.adafruit.com/adafruits-raspberry-pi-lesson-3-network-setup/setting-up-wifi-with-raspbian)
+
+
+// or use the following info to configure it via LAN with SSH
+
+
+//list all USB Devices
+$lsusb
+
+//list WLans
+$iwlist wlan0 scan
+
+//create a config file: mywpa.config
+$ sudo nano /etc/mywpa.config
+
+Now enter the following, save the file and exit back to the $ prompt (<Ctrl> O, <Ctrl< X)
+network={
+ssid="MyWLAN"
+proto=RSN
+key_mgmt=WPA-PSK
+pairwise=CCMP TKIP
+group=CCMP TKIP
+psk="MyKey"
+}
+
+//change your interface file to
+$ sudo nano /etc/network/interfaces
+
+auto lo
+
+iface lo inet loopback
+iface eth0 inet dhcp
+
+allow-hotplug wlan0
+
+auto wlan0
+iface wlan0 inet dhcp
+wpa-conf /etc/mywpa.config
+
+iface default inet dhcp
+
+
+//shutdown your raspberry and disconnect your LAN cable 
+$sudo shutdown -h now
+
+
+//check your WLAN Router for the new IP Adress and connect with putty
+
+
+
+
+/////////////////////////////
+// compile and run ecpiww  //
+/////////////////////////////
+
+//get ecpiww source
+$mkdir projects
+$cd projects
+$git clone https://github.com/ffcrg/ecpiww.git
+
+$cd ecpiww
+
+//copy websource to var/www
+$chmod u+x cpwww.sh
+$./cpwww.sh 
+
+
+//run make file
+$cd linux/bin
+$make -f mkfile
+
+//run App as root ; App writes to /var/www
+$screen bash
+$sudo ./ecpiww
+The App shows you the different options you have:
+   Usage
+   s   : Use S2 Mode
+   t   : Use T2 Mode
+   a   : Add Meter
+   r   : Remove Meter
+   l   : List Meters
+   u   : Update - Check for data
+   q   : Quit
+
+
+You can add your EnergyCams as Meter with (a).
+
+
+Press <Ctrl a> d brings you back to the terminal.
+
+
+//you can view the created csv Files with
+sudo nano /var/www/ecpiww/data/ecpiwwM1.csv 
+sudo nano /var/www/ecpiww/data/ecpiwwM2.csv
+sudo nano /var/www/ecpiww/data/ecpiwwM3.csv
+ 
+
+
+//reconnect to ecpi
+$screen -r
+
+//close ssh session ; ecpiww continues to run
+$exit
+
+//open website from your PC 
+//type the IP Adress of your raspberry into the adress bar of the browser
+
