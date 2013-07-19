@@ -9,8 +9,8 @@ FAST EnergyCam: The quick and inexpensive way to turn your conventional meter in
 
 Hardware:
   - Raspberry Pi
-  - FAST EnergyCam RF
-  - IMST IM871A-USB Stick (http://www.wireless-solutions.de/wireless-solutions/en/products/Gateways.php)
+  - FAST EnergyCam RF and FAST USB Communication Interface to configure the Energycam prior to installation
+  - IMST IM871A-USB Stick (http://webshop.imst.de/funkmodule/im871a-usb-wireless-mbus-usb-adapter-868-mhz.html)
   - EDIMAX EW-7811UN Wireless USB Adapter
 
 
