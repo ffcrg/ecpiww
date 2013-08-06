@@ -104,7 +104,9 @@ $./cpwww.sh
 $cd linux/bin
 $make -f mkfile
 
-//run App as root ; App writes to /var/www
+/////////////////////////////////////////////////////////
+// run App as root ; App writes a csv file to /var/www //
+/////////////////////////////////////////////////////////
 $screen bash
 $sudo ./ecpiww
 The App shows you the different options you have:
@@ -129,6 +131,14 @@ sudo nano /var/www/ecpiww/data/ecpiwwM1.csv
 sudo nano /var/www/ecpiww/data/ecpiwwM2.csv
 sudo nano /var/www/ecpiww/data/ecpiwwM3.csv
  
+
+//////////////////////////////////////
+// run App with commandline options //
+//////////////////////////////////////
+$./ecpiww -f /home/user/ecdata -p 0 -m S
+-f <dir> : save readings to <dir>/<wMBUS Ident>.dat ; these files can be parsed to feed the data to other apps
+-p 0 : Portnumber 0 -> /dev/ttyUSB0 is used to search for the USB Stick
+-m S : S2 Mode -> use S2 Mode - default is T2
 
 
 //reconnect to ecpi

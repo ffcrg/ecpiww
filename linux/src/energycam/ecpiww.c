@@ -139,14 +139,32 @@ void Intro(void)
     printf("##########################################################################\n");
     Colour(0, true);
     printf("   Usage\n");
-    printf("   s   : Use S2 Mode\n");
-    printf("   t   : Use T2 Mode\n");
-    printf("   a   : Add Meter\n");
-    printf("   r   : Remove Meter\n");
-    printf("   l   : List Meters\n"); 
-    printf("   u   : Update - Check for data\n"); 
+    printf("   s   : Use S2 mode\n");
+    printf("   t   : Use T2 mode\n");
+    printf("   a   : Add meter\n");
+    printf("   r   : Remove meter\n");
+    printf("   l   : List meters\n"); 
+    printf("   u   : Update - check for data\n"); 
     printf("   q   : Quit\n");
     printf("   \n");
+}
+
+void IntroShowParam(void)
+{
+    printf("   \n");
+    Colour(62,false); 
+    printf("##########################################################################\n");
+    printf("## ecpiww - EnergyCam on raspberry Pi/Weezy -connected via wMBUS + wLAN ##\n"); 
+    printf("##########################################################################\n");
+    
+    Colour(0,true);
+    printf("   Commandline options:\n");
+    printf("   ./ecpiww -f /home/user/ecdata -p 0 -m S\n");
+    printf("   -f <dir> : save readings to <dir>/<wMBUS Ident>.dat\n");
+    printf("   -p 0 : Portnumber 0 -> /dev/ttyUSB0\n");   
+    printf("   -m S : S2 mode \n");   
+     
+    printf("   \n");         
 }
 
 void ErrorAndExit(const char *info) {
@@ -215,6 +233,51 @@ void UpdateMetersonStick(unsigned long handle,int iMax, pecwMBUSMeter ecpiwwMete
     }
 }
 
+
+//support commandline 
+int parseparam(int argc, char *argv[],char *filepath,unsigned int *Port,unsigned int *Mode) { 
+	int c;
+
+
+       
+	opterr = 0;
+	while ((c = getopt (argc, argv, "f:hm:p:")) != -1){
+		switch (c){
+			case 'f':
+			 if (NULL != optarg){
+				 strcpy(filepath,optarg);
+			 }
+			 break;
+			case 'p':
+				 if (NULL != optarg){
+					 *Port = atoi(optarg);
+				 }
+				 break; 	
+			case 'm':
+				 if (NULL != optarg){
+					 if(0 == strcmp("S",optarg)) *Mode=RADIOS2;		
+					 printf("Mode %s \n",optarg);		 
+				 }
+				 break; 				 		 
+			case 'h':
+				IntroShowParam();
+				exit (0);
+				break;                     
+			 
+			case '?':
+				 if (optopt == 'f')
+				   fprintf (stderr, "Option -%c requires an argument.\n", optopt);
+				 else if (isprint (optopt))
+				   fprintf (stderr, "Unknown option `-%c'.\n", optopt);
+				 else
+				   fprintf (stderr,"Unknown option character `\\x%x'.\n",optopt);
+				 return 1;
+			default:
+				abort ();
+		}
+	}
+}
+
 //////////////////////////////////////////////
 int main(int argc, char *argv[]) { 
     int      key    = 0;
@@ -224,15 +287,27 @@ int main(int argc, char *argv[]) {
     char     KeyInput[_MAX_PATH];
     char     Key[3];
     char     csvFile[_MAX_PATH];
+    char     datFile[_MAX_PATH];
+    char     CommandlineDatPath[_MAX_PATH];
     double   csvValue;
     int      Meters =0;
     unsigned long ReturnValue;
     FILE    *hFile;
+    unsigned int Port = 0;    
+    unsigned int Mode = RADIOT2;
     char     comDeviceName[100];
     int      hStick;
 
     ecwMBUSMeter ecpiwwMeter[MAXMETER];
     memset(ecpiwwMeter,0,MAXMETER*sizeof(ecwMBUSMeter));
+    
+    memset(CommandlineDatPath,0,_MAX_PATH*sizeof(char));
+
+    
+    
+    if(argc > 1)
+      parseparam(argc,argv,CommandlineDatPath,&Port,&Mode);
+    
 
     //read config back
     if ((hFile = fopen("meter.dat", "rb")) != NULL) {
@@ -243,7 +318,7 @@ int main(int argc, char *argv[]) {
     Intro();
 
     //open wMBus Stick
-    sprintf(comDeviceName, "/dev/ttyUSB0");
+    sprintf(comDeviceName, "/dev/ttyUSB%d",Port);
     hStick = IMST_OpenDevice(comDeviceName);
     
     if(hStick <= 0)
@@ -254,8 +329,11 @@ int main(int argc, char *argv[]) {
     else
         ErrorAndExit("wMBUS Stick not found\n");
 
-    if(APIOK == IMST_GetRadioMode(hStick, &ReturnValue))
+    if(APIOK == IMST_GetRadioMode(hStick, &ReturnValue)){
         printf("wMBUS %s Mode\n", (ReturnValue == RADIOT2) ? "T2" : "S2");
+        if (ReturnValue != Mode)
+           IMST_SwitchMode( hStick, Mode);
+	   }
     else
         ErrorAndExit("wMBUS Stick not found\n");
     
@@ -328,7 +406,7 @@ int main(int argc, char *argv[]) {
                     }
                 }
                 
-                Meters = MIN(Meters++, MAXMETER-1);
+                Meters = MIN(++Meters, MAXMETER);
                 DisplayListofMeters(Meters, ecpiwwMeter);
                 UpdateMetersonStick(hStick, Meters, ecpiwwMeter);
             } else
@@ -392,9 +470,19 @@ int main(int argc, char *argv[]) {
                         printf(" RSSI=%i dbm, #%d \n", RFData.rssiDBm, RFData.accNo);
                         Colour(0,false);
                         
-                        //save file for webserver
-                        sprintf(csvFile, "/var/www/ecpiww/data/ecpiwwM%d.csv", iX+1);
-                        Log2CSVFile(csvFile, csvValue);
+                        if(strlen(CommandlineDatPath) > 0) {
+                          //save reading to file
+                          sprintf(datFile, "%s/%08X.dat",CommandlineDatPath, ecpiwwMeter[iX].ident);						
+                          if ((hFile = fopen(datFile, "wb")) != NULL) {
+                            fprintf(hFile,"%.1f\r\n",  csvValue);
+                            fclose(hFile);
+                          }											
+                        }
+                        else {
+                          //save file for webserver
+                          sprintf(csvFile, "/var/www/ecpiww/data/ecpiwwM%d.csv", iX+1);
+                          Log2CSVFile(csvFile, csvValue);
+                        }
                     }
                 }
             } else {
