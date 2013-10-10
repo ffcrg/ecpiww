@@ -399,7 +399,7 @@ void GetDataFromStick(unsigned long handle) {
                             RFData.value = *((unsigned long *)(buffer+Offset));
                     if(APL_DIF_DATA_FIELD_12_BCD == DIF) {
                         uint8_t bcdbytes[12/2];
-                        memcpy( bcdbytes,buffer+Offset,12);
+                        memcpy( bcdbytes,buffer+Offset,12/2);
                         saBCD12ToUINT32( bcdbytes,12/2, &RFData.value);
                     }
                 }
@@ -409,7 +409,7 @@ void GetDataFromStick(unsigned long handle) {
                             RFData.value = *((unsigned long *)(buffer+Offset));
                     if(APL_DIF_DATA_FIELD_12_BCD == DIF) {
                         uint8_t bcdbytes[12/2];
-                        memcpy(bcdbytes,buffer+Offset, 12);
+                        memcpy(bcdbytes,buffer+Offset, 12/2);
                         saBCD12ToUINT32(bcdbytes, 12/2, &RFData.value);
                     }
                 }
