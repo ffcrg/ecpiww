@@ -337,7 +337,7 @@ void GetDataFromStick(unsigned long handle) {
 
     if(dwReturn) {
         PayLoadLength = *(buffer+2);
-        printf(" PayloadL %d ", PayLoadLength);
+	printf(" PayloadL %d ", PayLoadLength);
 
         if(*(buffer) & 0x20) { //If TimeStamp attached
             TimeStamp = *( (unsigned long*) (buffer+3+PayLoadLength));
