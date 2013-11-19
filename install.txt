@@ -104,12 +104,13 @@ $./cpwww.sh
 $cd linux/bin
 $make -f mkfile
 
-/////////////////////////////////////////////////////////
-// run App as root ; App writes a csv file to /var/www //
-/////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////
+// run App as root ; App writes per default a csv file to /var/www //
+////////////////////////////////////////////////////////////////////
 $screen bash
-$sudo ./ecpiww
-The App shows you the different options you have:
+$sudo ./ecpiww  (this starts the app with the defaults: T2 Mode, USB Port 0 and logging to CSV)
+
+The App shows you the different options:
    Usage
    s   : Use S2 Mode
    t   : Use T2 Mode
@@ -120,26 +121,21 @@ The App shows you the different options you have:
    q   : Quit
 
 
-You can add your EnergyCams as Meter with (a).
+You can add your EnergyCams as Meter by pressing <a>:
+Adding Meter #1
+Enter Meter Ident (12345678): -> You have to enter the 8 digits of the MBUS ID
+Enter Meter Type (2 = Electricity ; 3 = Gas ; 7 = Water) : -> <2> for an Electricity Meter
+Enter Key (0 = Zero ; 1 = Default ; 2 = Enter the 16 Bytes) : -> You can select/configure the encryption 
 
 
-Press <Ctrl a> d brings you back to the terminal.
+
+Press <Ctrl a> <d> brings you back to the terminal.
 
 
 //you can view the created csv Files with
 sudo nano /var/www/ecpiww/data/ecpiwwM1.csv 
 sudo nano /var/www/ecpiww/data/ecpiwwM2.csv
 sudo nano /var/www/ecpiww/data/ecpiwwM3.csv
- 
-
-//////////////////////////////////////
-// run App with commandline options //
-//////////////////////////////////////
-$./ecpiww -f /home/user/ecdata -p 0 -m S
--f <dir> : save readings to <dir>/<wMBUS Ident>.dat ; these files can be parsed to feed the data to other apps
--p 0 : Portnumber 0 -> /dev/ttyUSB0 is used to search for the USB Stick
--m S : S2 Mode -> use S2 Mode - default is T2
-
 
 //reconnect to ecpi
 $screen -r
@@ -149,4 +145,65 @@ $exit
 
 //open website from your PC 
 //type the IP Adress of your raspberry into the adress bar of the browser
+
+
+
+ 
+
+//////////////////////////////////////
+// run App with commandline options //
+//////////////////////////////////////
+$./ecpiww -f /home/user/ecdata -p 0 -m S -l XML
+-f <dir> : save dat file or XML file to <dir>/<wMBUS Ident>.dat <dir>/<wMBUS Ident>.xml ; these files can be parsed to feed the data to other apps
+-p 0 : Portnumber 0 -> /dev/ttyUSB0 is used to search for the USB Stick
+-m S : S2 Mode -> use S2 Mode - default is T2
+-l VZ : log to (VZ)Volkszähler, (XML) XMLFile, (CSV) CSV File, (DAT) Datfile
+
+
+
+
+////////////////////////////////
+// -l VZ : log to Volkszähler //
+////////////////////////////////
+
+// to install volkszähler
+//see http://wiki.volkszaehler.org/software/middleware/installation
+
+
+////////////////////////////
+// connect to volkszähler //
+////////////////////////////
+
+//see: http://wiki.volkszaehler.org/software/clients/vzclient
+
+//Install vzclient 
+$wget https://raw.github.com/volkszaehler/volkszaehler.org/master/misc/tools/vzclient
+$sudo cp vzclient /usr/local/bin/vzclient
+$sudo chmod 555 /usr/local/bin/vzclient
+$chmod u+x ecpiww/linux/bin/add2zv.sh
+
+
+//config /etc/vzclient.conf ; you have to enter the IP adress of your volkszähler PC
+$sudo nano /etc/vzclient.conf
+[default]
+url:http://192.168.0.110/middleware.php
+
+
+//create new channel in the UI
+-  Add Channel
+	  Typ: Stromzaehler
+	  Auflösung: 1000
+	  Preis: 0.00028
+- press info button in the UI
+	  copy UUID-String
+	  enter UUID-String into ecpiww/linux/bin/add2zv.sh with the corresponding meterindex
+	  vzclient -u <UUID> add data value=$1
+		  
+
+
+
+
+
+
+
 

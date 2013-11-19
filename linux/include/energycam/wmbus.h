@@ -42,10 +42,11 @@ unsigned long IMST_OpenDevice(char * device);
 unsigned long IMST_CloseDevice(unsigned long handle);
 int IMST_GetStickId(unsigned long handle, unsigned long *ID);
 
-unsigned long  IMST_InitDevice(unsigned long handle);
+unsigned long  IMST_InitDevice(unsigned long handle,uint16_t infoflag);
 
-unsigned long  IMST_GetRadioMode(unsigned long handle, unsigned long *dwD);
-unsigned long  IMST_IsNewData(unsigned long handle);
+unsigned long  IMST_SwitchMode(unsigned long handle,uint8_t Mode,uint16_t infoflag);
+unsigned long  IMST_GetRadioMode(unsigned long handle, unsigned long *dwD,uint16_t infoflag);
+unsigned long  IMST_IsNewData(unsigned long handle,uint16_t infoflag);
 unsigned long  IMST_AddMeter(unsigned long handle, int slot, pecwMBUSMeter NewMeter );
 
 unsigned long IMST_GetMeterList();

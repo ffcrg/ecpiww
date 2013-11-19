@@ -15,30 +15,6 @@
 #include <energycam/ecpiww.h>
 #include <energycam/wmbus.h>
 
-#ifndef TRUE
-    #define TRUE  (1==1)
-    #define FALSE (1==2)
-#endif
-
-#ifndef MAX
-    #define MAX(x,y) ((x>y) ? x:y)
-    #define MIN(x,y) ((x>y) ? y:x)
-#endif 
-
-#define _MAX_PATH 275
-#define XSIZE     320
-#define YSIZE      80
-
-//colorcoding
-#define PRINTF_BRIGHT  1
-#define PRINTF_BLACK   0
-#define PRINTF_RED     1
-#define PRINTF_GREEN   2
-#define PRINTF_YELLOW  3
-#define PRINTF_BLUE    4
-#define PRINTF_MAGENTA 5
-#define PRINTF_CYAN    6
-#define PRINTF_WHITE   7
 
 void Colour(int8_t c, bool cr) {
     printf("%c[%dm",0x1B,(c>0) ? (30+c) : c);
@@ -161,10 +137,11 @@ void IntroShowParam(void)
     printf("   Commandline options:\n");
     printf("   ./ecpiww -f /home/user/ecdata -p 0 -m S\n");
     printf("   -f <dir> : save readings to <dir>/<wMBUS Ident>.dat\n");
+    printf("   -l VZ : log to (VZ)Volkszähler, (XML) XMLFile, (CSV) CSV File \n");     
     printf("   -p 0 : Portnumber 0 -> /dev/ttyUSB0\n");   
     printf("   -m S : S2 mode \n");   
-     
-    printf("   \n");         
+    printf("   -i    : show detailed infos \n\n");    
+             
 }
 
 void ErrorAndExit(const char *info) {
@@ -233,21 +210,185 @@ void UpdateMetersonStick(unsigned long handle,int iMax, pecwMBUSMeter ecpiwwMete
     }
 }
 
+#define XMLBUFFER (1*1024*1024)
+unsigned int Log2XMLFile(const char *path,double Reading,int RSSI)
+{
+	char szBuf[250];
+	FILE    *hFile;
+	unsigned char*   pXMLIN = NULL;
+	unsigned char*   pXMLTop,*pXMLMem = NULL;
+	unsigned char*  pXML;
+	unsigned int   dwSize=0;
+	unsigned int   dwSizeIn=0;
+	unsigned int   dwRW;
+	char  CurrentTime[250];
+
+
+	time_t t = time(NULL);
+	struct tm tm = *localtime(&t);
+	
+
+	if ( (hFile = fopen(path, "rb")) != NULL ) {
+		fseek(hFile, 0L, SEEK_END);
+		dwSizeIn = ftell(hFile);
+		fseek(hFile, 0L, SEEK_SET);
+		
+		pXMLIN = (unsigned char*) malloc(dwSizeIn);
+		if(NULL == pXMLIN) {
+		    printf("Log2XMLFile - malloc failed \r\n");
+		    return 0;
+		}
+		
+		fread(pXMLIN, dwSizeIn, 1, hFile);		
+		fclose(hFile);
+		
+		pXMLTop = (unsigned char *)strstr((const char*)pXMLIN,"<ENERGYCAMOCR>\r\n"); //search on start
+		if(pXMLTop){
+			pXMLTop += strlen("<ENERGYCAMOCR>\r\n");
+			pXMLMem = (unsigned char *) malloc(max(4*XMLBUFFER,XMLBUFFER+dwSizeIn));
+			if(NULL == pXMLMem) {
+				printf("Log2XMLFile - malloc %d failed \r\n",max(4*XMLBUFFER,XMLBUFFER+dwSizeIn));
+				return 0;
+			}			
+			memset(pXMLMem,0,sizeof(unsigned char)*max(4*XMLBUFFER,XMLBUFFER+dwSizeIn));
+			pXML = pXMLMem;
+			dwSize=0;
+			dwSizeIn -= pXMLTop-pXMLIN;
+
+			sprintf(szBuf,"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\r\n"); 
+			memcpy(pXML,szBuf,strlen(szBuf));dwSize+=strlen(szBuf);pXML+=strlen(szBuf);
+
+			sprintf(szBuf,"<ENERGYCAMOCR>\r\n"); 
+			memcpy(pXML,szBuf,strlen(szBuf));dwSize+=strlen(szBuf);pXML+=strlen(szBuf);
+		}
+	}
+	else {
+		//new File
+		pXMLMem = (unsigned char *) malloc(XMLBUFFER);
+		memset(pXMLMem,0,sizeof(unsigned char)*XMLBUFFER);
+		pXML = pXMLMem;
+		dwSize=0;
+
+		sprintf(szBuf,"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\r\n"); 
+		memcpy(pXML,szBuf,strlen(szBuf));dwSize+=strlen(szBuf);pXML+=strlen(szBuf);
+
+		sprintf(szBuf,"<ENERGYCAMOCR>\r\n"); 
+		memcpy(pXML,szBuf,strlen(szBuf));dwSize+=strlen(szBuf);pXML+=strlen(szBuf);
+	}
+
+
+
+
+	if(pXMLMem) {
+		sprintf(szBuf,"<OCR>\r\n"); 
+		memcpy(pXML,szBuf,strlen(szBuf));dwSize+=strlen(szBuf);pXML+=strlen(szBuf);
+		
+		sprintf(CurrentTime,"%02d.%02d.%d %02d:%02d:%02d",tm.tm_mday,tm.tm_mon+1,tm.tm_year+1900,tm.tm_hour,tm.tm_min,tm.tm_sec);
+		sprintf(szBuf,"<Date>%s</Date>\r\n",CurrentTime);memcpy(pXML,szBuf,strlen(szBuf));dwSize+=strlen(szBuf);pXML+=strlen(szBuf);
+
+		sprintf(szBuf,"<Reading>%.1f</Reading>\r\n",Reading);memcpy(pXML,szBuf,strlen(szBuf));dwSize+=strlen(szBuf);pXML+=strlen(szBuf);
+		if(RSSI != 0) {sprintf(szBuf,"<RSSI>%d</RSSI>\r\n",RSSI);memcpy(pXML,szBuf,strlen(szBuf));dwSize+=strlen(szBuf);pXML+=strlen(szBuf);}
+		sprintf(szBuf,"</OCR>\r\n");memcpy(pXML,szBuf,strlen(szBuf));dwSize+=strlen(szBuf);pXML+=strlen(szBuf);
+
+
+		if(dwSizeIn>0){
+			memcpy(pXML,pXMLTop,dwSizeIn);
+		}
+		else {
+			sprintf(szBuf,"</ENERGYCAMOCR>\r\n");	memcpy(pXML,szBuf,strlen(szBuf));dwSize+=strlen(szBuf);pXML+=strlen(szBuf);
+		}
+
+		if ( (hFile = fopen(path, "wb")) != NULL ) {
+			fwrite(pXMLMem, dwSizeIn+dwSize, 1, hFile);	
+			fclose(hFile);
+			chmod(path, 0666);
+		}
+	}
+
+	if(pXMLMem) free(pXMLMem);
+	if(pXMLIN) free(pXMLIN);
+
+
+	return true;
+}
+
+
+
+//Log Reading with date info to CSV File
+int Log2File(char *DataPath, uint16_t mode,uint16_t meterindex,uint16_t infoflag, float metervalue,int RSSI,uint32_t ident) {
+
+char   param[_MAX_PATH];
+char     datFile[_MAX_PATH];
+FILE    *hDatFile;
+time_t t; 
+struct tm curtime;
+    	
+switch(mode){
+	case LOGTOCSV : sprintf(param, "/var/www/ecpiww/data/ecpiwwM%d.csv", meterindex+1);
+					Log2CSVFile(param, metervalue); //log kWh
+					return APIOK; 
+					break;
+	case LOGTOXML : if (strlen(DataPath) == 0)	{
+					  getcwd(param, sizeof(param));
+					  sprintf(param, "%s/%08X.xml",param, ident);						
+				    }else{
+					  sprintf(datFile, "%s/%08X.xml",DataPath, ident);		
+				    }
+					Log2XMLFile(param,metervalue,RSSI); //log kWh
+					return APIOK; 					
+					break;
+	case LOGTOVZ :  if( access( "add2vz.sh", F_OK ) != -1 ) {
+							memset(param, '\0', sizeof(FILENAME_MAX));
+							sprintf(param, "./add2vz.sh %d %ld ",meterindex+1,(long int)metervalue*1000);
+							int ret=system(param);
+							t = time(NULL);
+							curtime = *localtime(&t);  
+
+							if(0x100 == ret){
+								 if(infoflag > SILENTMODE) printf("%02d:%02d Calling %s \n",curtime.tm_hour,curtime.tm_min,param);
+							}else{
+								 if(infoflag > SILENTMODE) printf("%02d:%02d Calling %s returned with 0x%X\n",curtime.tm_hour,curtime.tm_min,param,ret);
+							}	
+						}	
+					return APIOK; 					
+					break;
+	case LOGTODAT: 
+					sprintf(datFile, "%s/%08X.dat",DataPath, ident);						
+					  if ((hDatFile = fopen(datFile, "wb")) != NULL) {
+						fprintf(hDatFile,"%.1f\r\n",  metervalue);
+						fclose(hDatFile);
+					  }		
+					return APIOK; 					
+					break;					  				
+				}
+return APIERROR;
+}		
 
 //support commandline 
-int parseparam(int argc, char *argv[],char *filepath,unsigned int *Port,unsigned int *Mode) { 
+int parseparam(int argc, char *argv[],char *filepath,uint16_t *infoflag,uint16_t *Port,uint16_t *Mode,uint16_t *LogMode) { 
 	int c;
 
-
+  if((NULL == LogMode) || (NULL == infoflag) || (NULL == Port)  || (NULL == Mode) ) return 0;
+  
        
 	opterr = 0;
-	while ((c = getopt (argc, argv, "f:hm:p:")) != -1){
+	while ((c = getopt (argc, argv, "f:hil:m:p:x")) != -1){
 		switch (c){
 			case 'f':
 			 if (NULL != optarg){
 				 strcpy(filepath,optarg);
 			 }
 			 break;
+			case 'i':
+				 *infoflag = SHOWDETAILS;
+				 break;   	
+			case 'l':
+			 if (NULL != optarg){
+				 if(0 == strcmp("VZ",optarg))  *LogMode=LOGTOVZ;
+				 if(0 == strcmp("XML",optarg)) *LogMode=LOGTOXML;
+				 if(0 == strcmp("DAT",optarg)) *LogMode=LOGTODAT;			 
+			 }
+			 break;						 		 
 			case 'p':
 				 if (NULL != optarg){
 					 *Port = atoi(optarg);
@@ -255,14 +396,13 @@ int parseparam(int argc, char *argv[],char *filepath,unsigned int *Port,unsigned
 				 break; 	
 			case 'm':
 				 if (NULL != optarg){
-					 if(0 == strcmp("S",optarg)) *Mode=RADIOS2;		
-					 printf("Mode %s \n",optarg);		 
+					 if(0 == strcmp("S",optarg)) *Mode=RADIOS2;			 
 				 }
 				 break; 				 		 
 			case 'h':
 				IntroShowParam();
 				exit (0);
-				break;                     
+				break;          				           
 			 
 			case '?':
 				 if (optopt == 'f')
@@ -292,9 +432,13 @@ int main(int argc, char *argv[]) {
     double   csvValue;
     int      Meters =0;
     unsigned long ReturnValue;
-    FILE    *hFile;
-    unsigned int Port = 0;    
-    unsigned int Mode = RADIOT2;
+    FILE    *hDatFile;
+    
+    uint16_t InfoFlag = SILENTMODE;   
+    uint16_t Port = 0;    
+    uint16_t Mode = RADIOT2;
+	uint16_t LogMode = LOGTOCSV;
+	    
     char     comDeviceName[100];
     int      hStick;
 
@@ -306,13 +450,13 @@ int main(int argc, char *argv[]) {
     
     
     if(argc > 1)
-      parseparam(argc,argv,CommandlineDatPath,&Port,&Mode);
+      parseparam(argc,argv,CommandlineDatPath,&InfoFlag,&Port,&Mode,&LogMode);
     
 
     //read config back
-    if ((hFile = fopen("meter.dat", "rb")) != NULL) {
-        Meters = fread((void*)ecpiwwMeter, sizeof(ecwMBUSMeter), MAXMETER, hFile);
-        fclose(hFile);
+    if ((hDatFile = fopen("meter.dat", "rb")) != NULL) {
+        Meters = fread((void*)ecpiwwMeter, sizeof(ecwMBUSMeter), MAXMETER, hDatFile);
+        fclose(hDatFile);
     }
     
     Intro();
@@ -324,20 +468,21 @@ int main(int argc, char *argv[]) {
     if(hStick <= 0)
          ErrorAndExit("wMBUS Stick not found\n");
     
-    if((APIOK == IMST_GetStickId(hStick, &ReturnValue)) && (iM871AIdentifier == ReturnValue))
-        printf("iM871A Stick found\n");
+    if((APIOK == IMST_GetStickId(hStick, &ReturnValue)) && (iM871AIdentifier == ReturnValue)){
+        if(InfoFlag > SILENTMODE) printf("iM871A Stick found\n");
+	}
     else
         ErrorAndExit("wMBUS Stick not found\n");
 
-    if(APIOK == IMST_GetRadioMode(hStick, &ReturnValue)){
-        printf("wMBUS %s Mode\n", (ReturnValue == RADIOT2) ? "T2" : "S2");
+    if(APIOK == IMST_GetRadioMode(hStick, &ReturnValue,InfoFlag)){
+        if(InfoFlag > SILENTMODE) printf("wMBUS %s Mode\n", (ReturnValue == RADIOT2) ? "T2" : "S2");
         if (ReturnValue != Mode)
-           IMST_SwitchMode( hStick, Mode);
+           IMST_SwitchMode( hStick, Mode,InfoFlag);
 	   }
     else
         ErrorAndExit("wMBUS Stick not found\n");
     
-    IMST_InitDevice(hStick); 
+    IMST_InitDevice(hStick,InfoFlag); 
     
     UpdateMetersonStick(hStick, Meters, ecpiwwMeter);
      
@@ -347,6 +492,11 @@ int main(int argc, char *argv[]) {
         usleep(500*1000);   //sleep 500ms
           
         key = getkey();
+        
+        /*key =fgetc(stdin);
+        while(key!='\n' && fgetc(stdin) != '\n');
+        printf("Key=%d",key);*/
+        
            
         //add a new Meter
         if (key == 'a') {
@@ -406,7 +556,7 @@ int main(int argc, char *argv[]) {
                     }
                 }
                 
-                Meters = MIN(++Meters, MAXMETER);
+                Meters = min(++Meters, MAXMETER);
                 DisplayListofMeters(Meters, ecpiwwMeter);
                 UpdateMetersonStick(hStick, Meters, ecpiwwMeter);
             } else
@@ -434,11 +584,11 @@ int main(int argc, char *argv[]) {
         
         // switch to S2 mode
         if(key == 's')
-            IMST_SwitchMode( hStick, RADIOS2);
+            IMST_SwitchMode( hStick, RADIOS2,InfoFlag);
             
         // switch to T2 mode
         if(key == 't')
-            IMST_SwitchMode( hStick, RADIOT2);
+            IMST_SwitchMode( hStick, RADIOT2,InfoFlag);
         
         //check whether there are new data from the EnergyCams           
         if (IsNewMinute() || (key == 'u')) {
@@ -459,37 +609,32 @@ int main(int argc, char *argv[]) {
                                 iMul=iMul*10;
                             csvValue = (float)RFData.value*iMul;
                         }
-                        Colour(PRINTF_GREEN, false);   
-                        printf("Meter #%d : %4.1f %s", iX+1, csvValue, (ecpiwwMeter[iX].type == METER_ELECTRICITY) ? "Wh" : "m'3"); 
+                        if(InfoFlag > SILENTMODE) {
+							Colour(PRINTF_GREEN, false);   
+							printf("Meter #%d : %4.1f %s", iX+1, csvValue, (ecpiwwMeter[iX].type == METER_ELECTRICITY) ? "Wh" : "m'3"); 
+						}
                         if(ecpiwwMeter[iX].type == METER_ELECTRICITY)
                             csvValue = csvValue/1000.0;
-                        if((RFData.pktInfo & PACKET_WAS_ENCRYPTED)      == PACKET_WAS_ENCRYPTED)     printf(" Decryption OK");
-                        if((RFData.pktInfo & PACKET_WAS_NOT_ENCRYPTED)  == PACKET_WAS_NOT_ENCRYPTED) printf(" not encrypted");
-                        if((RFData.pktInfo & PACKET_IS_ENCRYPTED)       == PACKET_IS_ENCRYPTED)      printf(" is encrypted");
-                                            
-                        printf(" RSSI=%i dbm, #%d \n", RFData.rssiDBm, RFData.accNo);
-                        Colour(0,false);
+                            
+                        if(InfoFlag > SILENTMODE) {                          
+							if((RFData.pktInfo & PACKET_WAS_ENCRYPTED)      == PACKET_WAS_ENCRYPTED)     printf(" Decryption OK");
+							if((RFData.pktInfo & PACKET_WAS_NOT_ENCRYPTED)  == PACKET_WAS_NOT_ENCRYPTED) printf(" not encrypted");
+							if((RFData.pktInfo & PACKET_IS_ENCRYPTED)       == PACKET_IS_ENCRYPTED)      printf(" is encrypted");
+							printf(" RSSI=%i dbm, #%d \n", RFData.rssiDBm, RFData.accNo);
+							Colour(0,false);
+						}
+						
+						Log2File(CommandlineDatPath,LogMode,iX,InfoFlag,csvValue,RFData.rssiDBm,ecpiwwMeter[iX].ident);
                         
-                        if(strlen(CommandlineDatPath) > 0) {
-                          //save reading to file
-                          sprintf(datFile, "%s/%08X.dat",CommandlineDatPath, ecpiwwMeter[iX].ident);						
-                          if ((hFile = fopen(datFile, "wb")) != NULL) {
-                            fprintf(hFile,"%.1f\r\n",  csvValue);
-                            fclose(hFile);
-                          }											
-                        }
-                        else {
-                          //save file for webserver
-                          sprintf(csvFile, "/var/www/ecpiww/data/ecpiwwM%d.csv", iX+1);
-                          Log2CSVFile(csvFile, csvValue);
-                        }
                     }
                 }
             } else {
-              Colour(PRINTF_YELLOW, false);
-              printf("%02d ", iCheck);
-              Colour(0, false);
-              if((++iCheck % 20) == 0) printf("\r\n");
+			  if(InfoFlag > SILENTMODE) {
+				  Colour(PRINTF_YELLOW, false);
+				  printf("%02d ", iCheck);
+				  Colour(0, false);
+				  if((++iCheck % 20) == 0) printf("\r\n");
+				}
             }
         }
     } // end while
@@ -498,9 +643,9 @@ int main(int argc, char *argv[]) {
     
     //save Meter config to file
     if(Meters > 0) {
-        if ((hFile = fopen("meter.dat", "wb")) != NULL) {
-            fwrite((void*)ecpiwwMeter, sizeof(ecwMBUSMeter), MAXMETER, hFile);
-            fclose(hFile);
+        if ((hDatFile = fopen("meter.dat", "wb")) != NULL) {
+            fwrite((void*)ecpiwwMeter, sizeof(ecwMBUSMeter), MAXMETER, hDatFile);
+            fclose(hDatFile);
         }
     }
     return 0;
