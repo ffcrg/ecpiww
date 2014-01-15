@@ -30,7 +30,7 @@ void *libHandle;
 
 void *loadLibWMBusHCI() {
     char* error;
-    void* libHandle; 
+    void* libHandle;
 
     // get library handle
     libHandle = dlopen(LIB_WMBUSHCI, RTLD_NOW);
@@ -67,11 +67,10 @@ void unloadLibWMBusHCI(void * libHandle) {
 
 int IMST_GetStickId(unsigned long handle,unsigned long *ID) {
     unsigned long dwReturn=APIERROR;
-    int iX;
     unsigned char *pData;
     uint16_t Datasize=BUFFER_SIZE;
     pData = (unsigned char *) malloc(Datasize);
-    
+
     memset(pData,0,sizeof(unsigned char)*Datasize);
 
     if(WMBus_GetDeviceInfo(handle, pData, Datasize)) {
@@ -88,8 +87,8 @@ unsigned long IMST_GetLastError(unsigned long handle) {
     unsigned long dwReturn=0;
 
     dwReturn = WMBus_GetLastError(handle);
-    unsigned char *pData;
-    pData = (unsigned char *) malloc(128);
+    char *pData;
+    pData = (char *) malloc(128);
     memset(pData, 0, sizeof(unsigned char)*128);
     WMBus_GetErrorString(dwReturn, pData, 128);
     printf("GetLastError %ld %s\n", dwReturn, pData);
@@ -103,7 +102,7 @@ unsigned long  IMST_SwitchMode(unsigned long handle,uint8_t Mode,uint16_t infofl
     unsigned char *pData;
     pData = (unsigned char *) malloc(Datasize);
     memset(pData,0,sizeof(unsigned char)*Datasize);
-    
+
     if((Mode == RADIOT2) || (Mode || RADIOS2)) {
 
         //set to S2/T2 Mode
@@ -115,8 +114,8 @@ unsigned long  IMST_SwitchMode(unsigned long handle,uint8_t Mode,uint16_t infofl
         *(pData +5) = 1; //Timestamp
         *(pData +6) = 1; //RTC Control
 
-        if(dwReturn = WMBus_SetDeviceConfig(handle,pData,7,false)) {
-            if (infoflag > SILENTMODE) printf("IMST_SwitchMode to  %s \n",(Mode==RADIOT2) ?"T2" : "S2");
+        if((dwReturn = WMBus_SetDeviceConfig(handle,pData,7,false))>0) {
+            if (infoflag > SILENTMODE) printf("IMST_SwitchMode to  %s \n",((Mode==RADIOT2) ?"T2" : "S2"));
         }
     }
     free(pData);
@@ -126,7 +125,6 @@ unsigned long  IMST_SwitchMode(unsigned long handle,uint8_t Mode,uint16_t infofl
 
 unsigned long  IMST_GetRadioMode(unsigned long handle,unsigned long *dwD,uint16_t infoflag) {
     unsigned long  dwReturn=APIERROR;
-    int iX;
     uint16_t Datasize=BUFFER_SIZE;
     unsigned char *pData;
     pData = (unsigned char *) malloc(Datasize);
@@ -137,7 +135,7 @@ unsigned long  IMST_GetRadioMode(unsigned long handle,unsigned long *dwD,uint16_
     memset(pData,0,sizeof(unsigned char)*Datasize);
 
     if(WMBus_GetDeviceConfig(handle,pData,Datasize)) {
-		
+
 		if (infoflag > SILENTMODE) {
 			switch(*(pData +3)) {
 			case RADIOT2 : printf("T2 Mode \n");break;
@@ -145,9 +143,9 @@ unsigned long  IMST_GetRadioMode(unsigned long handle,unsigned long *dwD,uint16_
 			default : printf("undefined \n");break;
 			}
 		}
-        
+
         dwReturn=APIOK;
-        *dwD = *(pData +3);     
+        *dwD = *(pData +3);
     }
     free (pData);
     return dwReturn;
@@ -167,7 +165,7 @@ unsigned long  IMST_IsNewData(unsigned long handle,uint16_t infoflag) {
 
     if(WMBus_GetSystemStatus(handle,pData,Datasize)) {
         dwNewData = *((unsigned long*) (pData+23));
-        if(dwFrameCounter == 0) 
+        if(dwFrameCounter == 0)
             dwReturn = 0; //start condition
         else
             dwReturn = dwNewData - dwFrameCounter;
@@ -196,7 +194,7 @@ unsigned long  IMST_InitDevice(unsigned long handle,uint16_t infoflag) {
         myhandle=handle;
         WMBus_RegisterMsgHandler(&IMST_Callback);
     }
-    
+
     myInfoFlag = infoflag;
     //clear Array
     memset(MeterAddr, 0, MAXSLOT*sizeof(ecwMBUSMeter));
@@ -207,9 +205,9 @@ unsigned long  IMST_InitDevice(unsigned long handle,uint16_t infoflag) {
     int iX;
     for (iX=0;iX<AES_KEYLENGHT_IN_BYTES;iX++)
         Key[iX] = iX;
-    
+
     Filter[0] = 0x25B3>>8;
-    Filter[1] = 0xB3;               
+    Filter[1] = 0xB3;
     Filter[2] = 0x12;
     Filter[3] = 0x34>>16;
     Filter[4] = 0x56>>8;
@@ -231,14 +229,14 @@ unsigned long  IMST_AddMeter(unsigned long handle,int slot,pecwMBUSMeter NewMete
     if(slot<MAXSLOT) {
         dwMeter = slot;
         for( i=0; i<=MAXSLOT; i++) {
-            if(MeterAddr[i].manufacturerID == NewMeter->manufacturerID && 
-               MeterAddr[i].ident          == NewMeter->ident          && 
-               MeterAddr[i].version        == NewMeter->version        && 
+            if(MeterAddr[i].manufacturerID == NewMeter->manufacturerID &&
+               MeterAddr[i].ident          == NewMeter->ident          &&
+               MeterAddr[i].version        == NewMeter->version        &&
                MeterAddr[i].type           == NewMeter->type) {
             exist=true;
             }
         }
-    
+
         if(!exist) {//if Meter does not exist...Add new one
             unsigned char Filter[8];
 
@@ -257,9 +255,9 @@ unsigned long  IMST_AddMeter(unsigned long handle,int slot,pecwMBUSMeter NewMete
             Filter[5] = NewMeter->ident>>24;
             Filter[6] = NewMeter->version;
             Filter[7] = NewMeter->type;
-            
+
             WMBus_ConfigureAESDecryptionKey(handle, slot, Filter,(unsigned char*) MeterAddr[dwMeter].key);
-            dwMeter=dwMeter++;
+            dwMeter++;
             exist=false;
             return 1;
         } else {
@@ -267,17 +265,17 @@ unsigned long  IMST_AddMeter(unsigned long handle,int slot,pecwMBUSMeter NewMete
         }
     } else
         printf("All slots full \n");
-    
+
     return 0;
 }
 
 int IMST_IsInArray(ecwMBUSMeter p,ecwMBUSMeter MeterData[]) {
     int i;
     for(i=0;i<MAXSLOT;i++) {
-        if(MeterData[i].manufacturerID == p.manufacturerID && 
-           MeterData[i].ident          == p.ident          && 
-           MeterData[i].version        == p.version        && 
-           MeterData[i].type           == p.type) 
+        if(MeterData[i].manufacturerID == p.manufacturerID &&
+           MeterData[i].ident          == p.ident          &&
+           MeterData[i].version        == p.version        &&
+           MeterData[i].type           == p.type)
         break;
     }
     return i;
@@ -328,7 +326,6 @@ bool saBCD12ToUINT32(uint8_t* pBcd12, uint8_t size, uint32_t* pV) {
 void GetDataFromStick(unsigned long handle,uint16_t infoflag) {
     unsigned long dwReturn;
     int iX;
-    unsigned long dwD;
     int PayLoadLength;
     unsigned long TimeStamp=0;
     int8_t RSSI=0;
@@ -356,11 +353,17 @@ void GetDataFromStick(unsigned long handle,uint16_t infoflag) {
             RSSI=(int8_t)(m * (double)RSSIfromBuf + b);
             if (infoflag > SILENTMODE) printf("RSSI=%i",RSSI);
         }
-        if (infoflag > SILENTMODE) printf("\n",RSSI);
-       
+        if (infoflag > SILENTMODE) printf("\n");
+
+        /*if (infoflag > SILENTMODE){
+          for(iX=0; iX<24; iX++)
+             printf("%02X ",*(buffer+iX));
+          printf("\n");
+        }*/
+
         ecMBUSData   RFData;    //struct to store value + rssi + timestamp
         ecwMBUSMeter RFSource;  //struct to store Source Address
-        
+
         Decrypted=true;
         for(iX=1; iX<8; iX++) {
             if(*(buffer+2+PayLoadLength-iX) != APL_DIF_DATA_FIELD_SPECIAL_FILLER)
@@ -369,18 +372,21 @@ void GetDataFromStick(unsigned long handle,uint16_t infoflag) {
 
         memset(&RFData,   0, sizeof(ecMBUSData));
         memset(&RFSource, 0, sizeof(ecwMBUSMeter));
-        
+
         RFData.time=TimeStamp;
         RFData.rssiDBm= RSSI;
         RFData.accNo = *(buffer+13); //Access number
 
         //Status = *(buffer+14)
-        unsigned char CI = *(buffer+12);
         unsigned short CW = *((unsigned short*)(buffer+15));
+
+
         uint8_t DIF=0;
         uint8_t VIF=0;
 
-        RFData.pktInfo = (CW & 0x2000) ? PACKET_WAS_ENCRYPTED : PACKET_WAS_NOT_ENCRYPTED;
+        //RFData.pktInfo = ((CW & 0x0500) == 0x0500) ? PACKET_WAS_ENCRYPTED : PACKET_WAS_NOT_ENCRYPTED;
+        //The stick does the decryption and removes the flag
+        RFData.pktInfo = PACKET_WAS_NOT_ENCRYPTED;
 
         Offset = 17;  //start to check DIF on Offset 17
         DIF = *(buffer+Offset++);
@@ -393,11 +399,18 @@ void GetDataFromStick(unsigned long handle,uint16_t infoflag) {
         }
         RFData.exp = 0;
         RFData.value =0;
-        
+
+        //current PayLoadLength
+        //20 is not encrypted
+        //30 encrypted
+
         if((PayLoadLength < WMBUS_PAYLOADLENGTH_ENCRYPTED) || Decrypted ) {
             if((WMBUS_MSGLENGTH_AESERROR == PayLoadLength) && (*(buffer+1) == WMBUS_MSGID_AES_DECRYPTIONERROR)) {
                 RFData.pktInfo=PACKET_DECRYPTIONERROR;
             } else {
+                if(PayLoadLength > WMBUS_PAYLOADLENGTH_DEFAULT)
+                RFData.pktInfo = PACKET_WAS_ENCRYPTED;
+
                 if(APL_VIF_ENERGY_WH == (VIF & 0x78)) {
                     RFData.exp = (VIF&0x07)-3;
 
@@ -420,16 +433,16 @@ void GetDataFromStick(unsigned long handle,uint16_t infoflag) {
                     }
                 }
             }
-        } else 
+        } else
             RFData.pktInfo = PACKET_IS_ENCRYPTED;
 
         RFSource.manufacturerID = (*(buffer+ 5) << 8) +  *(buffer+4);                                   //dez
         RFSource.ident          = (*(buffer+ 9) <<24) + (*(buffer+8)<<16)+(*(buffer+7)<<8)+*(buffer+6); //dez
         RFSource.version        =  *(buffer+10);
         RFSource.type           =  *(buffer+11);
-        
+
         if (infoflag > SILENTMODE) printf("Meter  %04X %08X %02X %02X %d (exp) %d \n", RFSource.manufacturerID, RFSource.ident, RFSource.version, RFSource.type, RFData.value, RFData.exp);
-        
+
         int MeterIndex;
         MeterIndex = IMST_IsInArray(RFSource,MeterAddr);
 
@@ -445,7 +458,7 @@ void GetDataFromStick(unsigned long handle,uint16_t infoflag) {
 
 unsigned long IMST_OpenDevice(char * device) {
     //load external LIB
-    libHandle = loadLibWMBusHCI(); 
+    libHandle = loadLibWMBusHCI();
     if(0 == libHandle)
          ErrorAndExit("Library not found\n");
    return WMBus_OpenDevice(device);
@@ -458,13 +471,13 @@ unsigned long IMST_CloseDevice(unsigned long handle) {
 
 unsigned long IMST_GetData4Meter(unsigned long handle,int Index, psecMBUSData data) {
     unsigned long dwReturn;
-    
+
     if (Index > MAXSLOT)
         return 0;
 
     dwReturn = MeterHasData & (0x01<<Index); //get Bit out of mask
     if(NULL != data) memcpy(data, &MeterData[Index], sizeof(ecMBUSData));
     memset(&MeterData[Index], 0, sizeof(ecMBUSData));
-    MeterHasData &= ~(0x01<<Index); //clear Bit 
+    MeterHasData &= ~(0x01<<Index); //clear Bit
     return dwReturn;
 }

@@ -36,6 +36,8 @@
 
 #define WMBUS_MSGLENGTH_AESERROR        9
 #define WMBUS_PAYLOADLENGTH_ENCRYPTED   30
+#define WMBUS_PAYLOADLENGTH_DEFAULT     25
+
 
 //wMBus handling
 unsigned long IMST_OpenDevice(char * device);
@@ -48,6 +50,8 @@ unsigned long  IMST_SwitchMode(unsigned long handle,uint8_t Mode,uint16_t infofl
 unsigned long  IMST_GetRadioMode(unsigned long handle, unsigned long *dwD,uint16_t infoflag);
 unsigned long  IMST_IsNewData(unsigned long handle,uint16_t infoflag);
 unsigned long  IMST_AddMeter(unsigned long handle, int slot, pecwMBUSMeter NewMeter );
+int IMST_RemoveMeter(int Index);
+unsigned long IMST_GetData4Meter(unsigned long handle,int Index, psecMBUSData data);
 
 unsigned long IMST_GetMeterList();
 unsigned long IMST_GetMeterDataList();

@@ -11,7 +11,7 @@
 #ifndef max
   #define max(x,y) ((x>y) ? x:y)
   #define min(x,y) ((x>y) ? y:x)
-#endif 
+#endif
 
 #ifndef TRUE
     #define TRUE  (1==1)
@@ -53,13 +53,13 @@
 #define FASTFORWARD             0x18C4
 #define AES_KEYLENGHT_IN_BYTES  16
 
-#pragma pack(push,1) 
+#pragma pack(push,1)
 typedef struct _WMBUS_METER {
-    uint16_t  manufacturerID;   
-    uint32_t  ident; 
-    uint8_t   version;        
-    uint8_t   type;        
-    uint8_t   key[AES_KEYLENGHT_IN_BYTES];       
+    uint16_t  manufacturerID;
+    uint32_t  ident;
+    uint8_t   version;
+    uint8_t   type;
+    uint8_t   key[AES_KEYLENGHT_IN_BYTES];
 } ecwMBUSMeter, *pecwMBUSMeter;
 #pragma pack(pop)
 
@@ -74,5 +74,8 @@ typedef struct _RF_DATA {
     int8_t   rssiDBm;   // rssi in dbm
     uint8_t  pktInfo;   // EC packet info
 } ecMBUSData, *psecMBUSData;
+
+
+void ErrorAndExit(const char *info);
 
 #endif
