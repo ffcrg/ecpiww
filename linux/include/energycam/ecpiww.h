@@ -30,8 +30,8 @@
 
 
 //show Information
-#define SILENTMODE 0
-#define SHOWDETAILS 1
+#define SILENTMODE     0
+#define SHOWDETAILS    1
 #define SHOWALLDETAILS 2
 
 //colorcoding
@@ -73,6 +73,11 @@ typedef struct _RF_DATA {
     uint8_t  accNo;     // RF packet access number, should be ascending and wraps
     int8_t   rssiDBm;   // rssi in dbm
     uint8_t  pktInfo;   // EC packet info
+    uint8_t  utcnt_pic;   // Unique transmission counter (OCR picture count)
+    uint8_t  utcnt_tx;    // Unique transmission counter (tx count)
+    uint8_t  status;      // wMbus Status
+    uint16_t configWord;  // wMbus ConfigWord
+    uint32_t mbusID;      // MBus ID (8 BCD)
 } ecMBUSData, *psecMBUSData;
 
 

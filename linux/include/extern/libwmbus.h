@@ -8,11 +8,11 @@
 #include <dlfcn.h>
 #include <string.h>
 
-#ifndef MAX 
+#ifndef MAX
     #define MAX(x, y) ((x > y) ? x : y)
 #endif
 
-#ifndef MIN 
+#ifndef MIN
     #define MIN(x, y) ((x > y) ? y : x)
 #endif
 
@@ -22,6 +22,14 @@
 
 typedef unsigned char UINT8;
 typedef unsigned int UINT32;
+
+//Modes
+#define RADIOT2	4
+#define RADIOS2	2
+
+#define RADIOT2_AMB	0x08
+#define RADIOS2_AMB	0x03
+
 
 //Messages
 #define WMBUS_MSG_HCI_MESSAGE_IND 0x00000004
