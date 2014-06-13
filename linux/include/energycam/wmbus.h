@@ -18,16 +18,22 @@
 #define OFFSETDECRYPTFILLER 14
 
 //wM-Bus data defines
+#define APL_VIF_UNITCODE                        0x78U
 #define APL_VIF_ENERGY_WH                       0x00U
 #define APL_VIFE_TRANS_CTR                      0x08U /*! E000 1000: Unique telegram identification (transmission counter) */
 #define APL_VIF_VOLUME_M3                       0x10U
 #define APL_VIF_SECOND_EXTENSION                0xFDU
 
 #ifndef APL_DIF_DATA_FIELD_SPECIAL_FILLER
-#define APL_DIF_DATA_FIELD_SPECIAL_FILLER       0x2F
+#define APL_DIF_DATAFIELD                       0x0FU
+#define APL_DIF_DATA_FIELD_SPECIAL_FILLER       0x2FU
 #define APL_DIF_DATA_FIELD_16_INT               0x02U
 #define APL_DIF_DATA_FIELD_32_INT               0x04U
 #define APL_DIF_DATA_FIELD_12_BCD               0x0EU
+
+#define APL_DIF_FUNCTIONFIELD                   0x30U
+#define APL_DIF_FUNC_INSTANEOUS                 0x00U
+#define APL_DIF_FUNC_ERROR                      0x30U // Value during error state 
 
 #define APL_VIF_EXTENSION_BIT                   0x80U
 /*! E000 1000: Unique telegram identification (transmission counter) */

@@ -845,23 +845,23 @@ void GetDataFromStick(unsigned long handle, uint16_t stick, uint16_t infoflag) {
                     if(PayLoadLength > (WMBUS_PAYLOADLENGTH_DEFAULT+1)) //RSSI is attached
                         RFData.pktInfo = PACKET_WAS_ENCRYPTED;
                 }
-
-                if(APL_VIF_ENERGY_WH == (VIF & 0x78)) {
+                RFData.valDuringErrState = (DIF & APL_DIF_FUNCTIONFIELD) == APL_DIF_FUNC_ERROR;
+                if(APL_VIF_ENERGY_WH == (VIF & APL_VIF_UNITCODE)) {
                     RFData.exp = (VIF&0x07)-3;
 
-                    if(APL_DIF_DATA_FIELD_32_INT == DIF)
+                    if(APL_DIF_DATA_FIELD_32_INT == (DIF & APL_DIF_DATAFIELD))
                         RFData.value = *((unsigned long *)(pBuffer+Offset));
-                    if(APL_DIF_DATA_FIELD_12_BCD == DIF) {
+                    if(APL_DIF_DATA_FIELD_12_BCD == (DIF & APL_DIF_DATAFIELD)) {
                         uint8_t bcdbytes[12/2];
                         memcpy(bcdbytes, pBuffer+Offset,12/2);
                         saBCD12ToUINT32(bcdbytes,12/2, &RFData.value);
                     }
                 }
-                if(APL_VIF_VOLUME_M3 == (VIF & 0x78)) {
+                if(APL_VIF_VOLUME_M3 == (VIF & APL_VIF_UNITCODE)) {
                     RFData.exp = (VIF&0x07)-6;
-                    if(APL_DIF_DATA_FIELD_32_INT == DIF)
+                    if(APL_DIF_DATA_FIELD_32_INT == (DIF & APL_DIF_DATAFIELD))
                         RFData.value = *((unsigned long *)(pBuffer+Offset));
-                    if(APL_DIF_DATA_FIELD_12_BCD == DIF) {
+                    if(APL_DIF_DATA_FIELD_12_BCD == (DIF & APL_DIF_DATAFIELD)) {
                         uint8_t bcdbytes[12/2];
                         memcpy(bcdbytes, pBuffer+Offset, 12/2);
                         saBCD12ToUINT32(bcdbytes, 12/2, &RFData.value);
@@ -883,7 +883,7 @@ void GetDataFromStick(unsigned long handle, uint16_t stick, uint16_t infoflag) {
                 }
 
                 // read the tx and pic counters
-                if ( DIF == APL_DIF_DATA_FIELD_16_INT && VIF == APL_VIFE_TRANS_CTR ) {
+                if ( (DIF & APL_DIF_DATAFIELD) == APL_DIF_DATA_FIELD_16_INT && VIF == APL_VIFE_TRANS_CTR ) {
                     RFData.utcnt_tx  = *(pBuffer+Offset++);
                     RFData.utcnt_pic = *(pBuffer+Offset++);
                 }

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 
 
@@ -78,6 +79,7 @@ typedef struct _RF_DATA {
     uint8_t  status;      // wMbus Status
     uint16_t configWord;  // wMbus ConfigWord
     uint32_t mbusID;      // MBus ID (8 BCD)
+    bool valDuringErrState; // valDuringErrState: True when OCR could not be done, e.g. when SA is de-mounted, and ocr is repeated by last valid value (See "Value during error state" in M-Bus spec, coded in DIF[5:4])
 } ecMBUSData, *psecMBUSData;
 
 
