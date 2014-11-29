@@ -11,9 +11,10 @@ Hardware:
   - Raspberry Pi
   - FAST EnergyCam RF and FAST USB Communication Interface to configure the Energycam prior to installation
 	(available at http://umwelt-messtechnik.de/index.php?cat=c91_Smart-Grid-Komponenten-Smart-Grid-Komponenten.html)
-  - IMST IM871A-USB Stick 
-	( available at http://www.tekmodul.de/index.php?id=shop-wireless_m-bus_oms_module or 
-          http://webshop.imst.de/funkmodule/im871a-usb-wireless-mbus-usb-adapter-868-mhz.html)
+  - wireless M-Bus USB Stick (2 manufacturers are supported)
+  	- IMST IM871A-USB Stick ( available at http://www.tekmodul.de/index.php?id=shop-wireless_m-bus_oms_module or http://webshop.imst.de/funkmodule/im871a-usb-wireless-mbus-usb-adapter-868-mhz.html)
+  	- AMBER Wireless M-Bus USB Adapter (http://amber-wireless.de/406-1-AMB8465-M.html)
+  	
   - EDIMAX EW-7811UN Wireless USB Adapter
 
 
