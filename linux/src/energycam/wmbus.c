@@ -12,7 +12,6 @@
 #include <dlfcn.h>
 #include <pthread.h>
 #include <energycam/ecpiww.h>
-#include <extern/libwmbus.h>
 #include <energycam/wmbus.h>
 #include <energycam/wmbusext.h>
 
@@ -20,63 +19,29 @@ unsigned long   dwFrameCounter;
 unsigned long   dwMeter=0;
 unsigned long   MeterPresent=0;
 unsigned long   MeterHasData=0;
-bool            bCallbackRegistered=false;
 unsigned long   myhandle=0;
 uint16_t        myInfoFlag=SILENTMODE;
 uint16_t        myStickID = 0;
 
+uint8_t         AmberPayloadOffset;
+uint8_t         CommandResponse[MAX_COMMAND_RESPONSE];
+unsigned long   COMBytesReceived;
+unsigned long   CommandsReceived;
+
 static ecwMBUSMeter MeterAddr[MAXSLOT];
 static ecMBUSData MeterData[MAXSLOT];
-
-void *libHandle;
-
-void *loadLibWMBusHCI() {
-    char* error;
-    void* libHandle;
-
-    // get library handle
-    libHandle = dlopen(LIB_WMBUSHCI, RTLD_NOW);
-
-    if(!libHandle) {
-        printf("Error while loading: %s\n", dlerror());
-        return NULL;
-    }
-
-    // loading library function pointers
-    WMBus_OpenDevice                = (open_t)                      dlsym(libHandle, "WMBus_OpenDevice");
-    WMBus_CloseDevice               = (close_t)                     dlsym(libHandle, "WMBus_CloseDevice");
-    WMBus_GetDeviceInfo             = (getdevinfo_t)                dlsym(libHandle, "WMBus_GetDeviceInfo");
-    WMBus_GetLastError              = (getlasterror_t)              dlsym(libHandle, "WMBus_GetLastError");
-    WMBus_GetErrorString            = (geterrorstring_t)            dlsym(libHandle, "WMBus_GetErrorString");
-    WMBus_GetSystemStatus           = (getsystemstatus_t)           dlsym(libHandle, "WMBus_GetSystemStatus");
-    WMBus_GetDeviceConfig           = (deviceconfig_t)              dlsym(libHandle, "WMBus_GetDeviceConfig");
-    WMBus_SetDeviceConfig           = (setdeviceconfig_t)           dlsym(libHandle, "WMBus_SetDeviceConfig");
-    WMBus_GetHCIMessage             = (gethcimessage_t)             dlsym(libHandle, "WMBus_GetHCIMessage");
-    WMBus_ConfigureAESDecryptionKey = (configureAESDecryptionKey_t) dlsym(libHandle, "WMBus_ConfigureAESDecryptionKey");
-    WMBus_RegisterMsgHandler        = (registermsghandler_t)        dlsym(libHandle, "WMBus_RegisterMsgHandler");
-
-    if((error = dlerror()) != NULL) {
-        printf("Error linking with dlsym: %s\n", error);
-        return NULL;
-    }
-    return libHandle;
-}
-
-void unloadLibWMBusHCI(void * libHandle) {
-    if(NULL != libHandle)
-       dlclose(libHandle);
-}
 
 void GetDataFromStick(unsigned long handle,uint16_t stick,uint16_t infoflag);
 //////////////////////////////////////////////////////////////////////////////////////
 
-#pragma region "AMBERStick"
+
 pthread_t   ThreadID;
 pthread_mutex_t lockAPI= PTHREAD_MUTEX_INITIALIZER;
-int AmberCom=-1;
+int StickCom=-1;
 
-//connect to AMBER Stick
-int AMBER_OpenDevice(char * comport, uint32_t BaudRate) {
+
+//connect  Stick
+int Stick_OpenDevice(char * comport, uint32_t BaudRate) {
     // Declare variables and structures
     struct termios tios;
     speed_t speed;
@@ -136,6 +101,23 @@ int AMBER_OpenDevice(char * comport, uint32_t BaudRate) {
     return serial;
 }
 
+//disconnect device
+bool Stick_CloseDevice(int serial) {
+    // Close serial port
+    printf("Closing serial port ");
+    if (close(serial) != 0) {
+        printf( "Error\n");
+        return false;
+    }
+    printf("OK\n");
+    return true;
+}
+
+
+#ifdef WIN32
+#pragma region "AMBERStick"
+#endif
+
 //send Commands to AMBER stick
 bool AMBERCommand(int serial, uint8_t command[], uint8_t  *pData,bool bReq, short sWriteSize, short Datasize, uint16_t infoflag) {
     ssize_t bytes_read=0;
@@ -152,8 +134,7 @@ bool AMBERCommand(int serial, uint8_t command[], uint8_t  *pData,bool bReq, shor
     bytes_written = write(serial, command, sWriteSize);
     if(bytes_written <= 0) {
         bSuccess=false;
-    }
-    else {
+    } else {
         if(bReq) { //Validation (only in REQ commands)
             pBuffer[3]=0xFF;//Write sample value
             usleep(5*SLEEP100MS); //time to answer
@@ -220,8 +201,7 @@ bool AMBERCommand(int serial, uint8_t command[], uint8_t  *pData,bool bReq, shor
                                  if(infoflag>=SHOWALLDETAILS)
                                      printf("...OK");
                                   bSuccess=true;
-                            }
-                            else {
+                            } else {
                                  printf("Error...setting S2/T2 mode failed\n");
                                  bSuccess=false ;
                             }
@@ -248,9 +228,7 @@ bool AMBERCommand(int serial, uint8_t command[], uint8_t  *pData,bool bReq, shor
                             if(infoflag>=SHOWDETAILS) printf("Error...undefined command\n");
                         break;
                     }  //case
-                }
-                else
-                    {  //  if((command[1]
+                }else {  //  if((command[1]
                     bSuccess=false;
                 }
             }//bytes read
@@ -265,17 +243,6 @@ bool AMBERCommand(int serial, uint8_t command[], uint8_t  *pData,bool bReq, shor
     return bSuccess;
 }
 
-//disconnect AMBER device
-bool AMBER_CloseDevice(int serial) {
-    // Close serial port
-    printf("Closing serial port ");
-    if (close(serial) != 0) {
-        printf( "Error\n");
-        return false;
-    }
-    printf("OK\n");
-    return true;
-}
 
 //calc CRC of AMBER Commands
 uint8_t CRC_XOR(uint8_t *buffer, uint16_t buffer_length) {
@@ -305,10 +272,14 @@ bool AMBER_SwitchRFMode(int serial, uint8_t Mode, uint16_t infoflag) {
     return bSuccess;
 }
 
+
+
 //read data from stick
+
 bool AMBER_ReadFrameFromStick(int serial, uint8_t *pbuffer, int sSize, short* sSize_frame, uint16_t infoflag) {
     ssize_t bytes_read=0;
     int iBytesleft=0;
+    int iFrameLength;
     int index=0;
     int i=0;
     int iTimeout=0;
@@ -318,15 +289,15 @@ bool AMBER_ReadFrameFromStick(int serial, uint8_t *pbuffer, int sSize, short* sS
     bytes_read = read(serial, pbuffer, sSize);
 
     if ( bytes_read ) {
-        unsigned int frame_length=pbuffer[0]+1;  //store frame length of frame
-        if(frame_length==bytes_read){   //check wheter first byte of frame (frame length) is same as bytes read from serial port
-            *sSize_frame=pbuffer[0];
+        iFrameLength=pbuffer[AMBER_WMBUSDATA_CMDLENGTH-AmberPayloadOffset]+1;  //store frame length of frame
+
+        if(iFrameLength<=(bytes_read-AMBER_WMBUSDATA_CMDLENGTH+AmberPayloadOffset)){   //check wheter first byte of frame (frame length) is same as bytes read from serial$
+            *sSize_frame=pbuffer[AMBER_WMBUSDATA_CMDLENGTH-AmberPayloadOffset];
             bSuccess=true;
-        }
-        else {
-            if(frame_length>bytes_read) { //if frame is still not complete re-read data from serial port
+        } else {
+            if(iFrameLength>bytes_read) { //if frame is still not complete re-read data from serial port
                 index=bytes_read;
-                iBytesleft=frame_length-bytes_read;
+                iBytesleft=iFrameLength-bytes_read+AMBER_WMBUSDATA_CMDLENGTH-AmberPayloadOffset;
                 iTimeout=0;
                 do {
                     usleep(SLEEP100MS); //time to send next bytes
@@ -337,12 +308,13 @@ bool AMBER_ReadFrameFromStick(int serial, uint8_t *pbuffer, int sSize, short* sS
                     if(iTimeout++ > 100) break;
 
                 } while(iBytesleft>0); //All data complete ?
-                if(iBytesleft==0) bSuccess=true;
+                if(iBytesleft<=0) bSuccess=true;
             }
         }
 
         if(infoflag>=SHOWALLDETAILS) {
-            for(i=0; i<frame_length; i++)
+            printf("Buffer(%02X %02X %02X ):",iFrameLength,bytes_read,bSuccess);
+            for(i=0; i<iFrameLength; i++)
                 printf("%02X ", pbuffer[i]);         //show bytes recieved
             printf("\n");
         }
@@ -350,54 +322,272 @@ bool AMBER_ReadFrameFromStick(int serial, uint8_t *pbuffer, int sSize, short* sS
     return bSuccess;
 }
 
+
+
+#ifdef WIN32
 #pragma endregion
+#endif
+
+
+#ifdef WIN32
+#pragma region "IMSTStick"
+#endif
+
+
+bool IMST_AwaitResponse(unsigned long Start)
+{
+    int Timeout = 10;
+    do {
+        usleep(SLEEP100MS);
+    } while((Start==CommandsReceived) && (Timeout-- > 0));
+
+    return (CommandsReceived > Start);
+}
+
+//change RF mode
+bool IMST_SwitchRFMode(int serial, uint8_t Mode, uint16_t infoflag) {
+    bool bSuccess = false;
+    uint8_t DataBytes[MAX_HCI_LENGTH];
+    memset(DataBytes,0,sizeof(uint8_t)*MAX_HCI_LENGTH);
+
+    DataBytes[SOF] = START_OF_FRAME;
+    DataBytes[CF_EID] = DEVMGMT_ID;
+    DataBytes[MID] = DEVMGMT_MSG_SET_CONFIG_REQ;
+    DataBytes[LENGTH] = 7;
+    DataBytes[PAYLOAD + 0] = 0; //change configuration only temporary
+
+    DataBytes[PAYLOAD + 1] = 3; //IIFlag 1; Bit 0 : Device Mode, Bit 1 : Radio Mode
+    DataBytes[PAYLOAD + 2] = 0; //Other
+    DataBytes[PAYLOAD + 3] = Mode; //S2=2   ; T2=4
+    DataBytes[PAYLOAD + 4] = 0xB0; //IIFlag2 Auto RSSI, Auto Rx Timestamp, RTC Control
+    DataBytes[PAYLOAD + 5] = 1; //RSSI
+    DataBytes[PAYLOAD + 6] = 1; //Timestamp
+    DataBytes[PAYLOAD + 7] = 1;
+
+    unsigned long bytes_written=0;
+    unsigned long Start=CommandsReceived;
+
+    bytes_written = write(serial, DataBytes, LENGTH_HCI_HEADER + DataBytes[LENGTH]);
+
+    if(bytes_written > 0) {
+        if(IMST_AwaitResponse(Start)){
+            bSuccess = true;
+        }
+    }
+    return bSuccess;
+}
+
+bool IMST_GetStickId(int serial, uint8_t *ID) {
+    bool bSuccess = false;
+    uint8_t DataBytes[MAX_HCI_LENGTH];
+    memset(DataBytes,0,sizeof(uint8_t)*MAX_HCI_LENGTH);
+
+    DataBytes[SOF] = START_OF_FRAME;
+    DataBytes[CF_EID] = DEVMGMT_ID;
+    DataBytes[MID] = DEVMGMT_MSG_GET_DEVICEINFO_REQ;
+    DataBytes[LENGTH] = 0;
+
+    unsigned long bytes_written=0;
+    unsigned long Start=CommandsReceived;
+
+    bytes_written = write(serial, DataBytes, LENGTH_HCI_HEADER + DataBytes[LENGTH]);
+    if(bytes_written > 0) {
+        if(IMST_AwaitResponse(Start)){
+            *ID = CommandResponse[OFFSETPAYLOAD];
+            bSuccess = true;
+        }
+    }
+    return bSuccess;
+}
+
+
+bool IMST_GetRadioMode(int serial, uint8_t *Mode) {
+    bool bSuccess = false;
+    uint8_t DataBytes[MAX_HCI_LENGTH];
+    memset(DataBytes,0,sizeof(uint8_t)*MAX_HCI_LENGTH);
+
+    DataBytes[SOF] = START_OF_FRAME;
+    DataBytes[CF_EID] = DEVMGMT_ID;
+    DataBytes[MID] = DEVMGMT_MSG_GET_CONFIG_REQ;
+    DataBytes[LENGTH] = 0;
+
+    unsigned long bytes_written=0;
+    unsigned long Start=CommandsReceived;
+
+    bytes_written = write(serial, DataBytes, LENGTH_HCI_HEADER + DataBytes[LENGTH]);
+
+    if(bytes_written > 0) {
+        if(IMST_AwaitResponse(Start)){
+            *Mode = CommandResponse[OFFSETPAYLOAD+2];
+            bSuccess = true;
+        }
+    }
+    return bSuccess;
+}
+
+
+bool IMST_SwitchMode(int serial, uint8_t Mode) {
+    bool bSuccess = false;
+    uint8_t DataBytes[MAX_HCI_LENGTH];
+    memset(DataBytes,0,sizeof(uint8_t)*MAX_HCI_LENGTH);
+
+    DataBytes[SOF] = START_OF_FRAME;
+    DataBytes[CF_EID] = DEVMGMT_ID;
+    DataBytes[MID] = DEVMGMT_MSG_SET_CONFIG_REQ;
+    DataBytes[LENGTH] = 7;
+    DataBytes[PAYLOAD + 0] = 0; //change configuration only temporary
+
+    DataBytes[PAYLOAD + 1] = 3; //IIFlag 1; Bit 0 : Device Mode, Bit 1 : Radio Mode
+    DataBytes[PAYLOAD + 2] = 0; //Other
+    DataBytes[PAYLOAD + 3] = Mode; //S2=2   ; T2=4
+    DataBytes[PAYLOAD + 4] = 0xB0; //IIFlag2 Auto RSSI, Auto Rx Timestamp, RTC Control
+    DataBytes[PAYLOAD + 5] = 1; //RSSI
+    DataBytes[PAYLOAD + 6] = 1; //Timestamp
+    DataBytes[PAYLOAD + 7] = 1; //Timestamp
+
+    unsigned long bytes_written=0;
+    unsigned long Start=CommandsReceived;
+
+    bytes_written = write(serial, DataBytes, LENGTH_HCI_HEADER + DataBytes[LENGTH]);
+
+    if(bytes_written > 0) {
+        if(IMST_AwaitResponse(Start)){
+            bSuccess = true;
+        }
+    }
+    return bSuccess;
+}
+
+
+bool IMST_WriteAESKey(int serial, uint8_t slot, uint8_t *device, uint8_t *key) {
+    bool bSuccess = false;
+    uint8_t DataBytes[MAX_HCI_LENGTH];
+    memset(DataBytes,0,sizeof(uint8_t)*MAX_HCI_LENGTH);
+
+    DataBytes[SOF] = START_OF_FRAME;
+    DataBytes[CF_EID] = DEVMGMT_ID;
+    DataBytes[MID] = DEVMGMT_MSG_SET_AES_DECKEY_REQ;
+    DataBytes[LENGTH] = 25;
+    DataBytes[PAYLOAD + 0] = slot;
+    memcpy(&DataBytes[PAYLOAD + 1],device,8);
+    memcpy(&DataBytes[PAYLOAD + 9],key,16);
+
+    unsigned long bytes_written=0;
+    unsigned long Start=CommandsReceived;
+
+    bytes_written = write(serial, DataBytes, LENGTH_HCI_HEADER + DataBytes[LENGTH]);
+
+    if(bytes_written > 0) {
+        if(IMST_AwaitResponse(Start)){
+            bSuccess = true;
+        }
+    }
+
+    return bSuccess;
+}
+
+
+
+
+bool IMST_ReadFrameFromStick(int serial, uint8_t *pBuffer,int sSize, uint16_t infoflag)
+{
+    unsigned long dwI,bytes_read=0;
+    uint8_t DataBytes[MAX_HCI_LENGTH];
+    uint8_t Length=0;
+    bool DataReceived = false;
+    memset(DataBytes,0,sizeof(uint8_t)*MAX_HCI_LENGTH);
+
+    bytes_read = read(serial, DataBytes, MAX_HCI_LENGTH);
+    if(bytes_read > 0){
+        if(infoflag == SHOWALLDETAILS){
+            printf("ReadFrameFromStick %d Bytes\n",(int)bytes_read);
+            for(dwI=0; dwI<bytes_read;dwI++)
+                printf("%02X ",DataBytes[dwI]);
+            printf("\n");
+        }
+
+        COMBytesReceived+=bytes_read;
+
+        if(START_OF_FRAME == DataBytes[SOF]){
+            if(RADIOLINK_ID == CF_ENDPOINTID(DataBytes[CF_EID])){  //wM-Bus Data
+                if(RADIOLINK_MSG_WMBUSMSG_IND == DataBytes[MID])
+                    Length = DataBytes[LENGTH] + OFFSETPAYLOAD + ((CF_TIMESTAMP(DataBytes[CF_EID]) > 0) ? 4 : 0) + ((CF_RSSI(DataBytes[CF_EID]) > 0) ? 1 : 0) + ((CF_CRC16(DataBytes[CF_EID]) > 0) ? 2 : 0) ;
+                    memcpy(pBuffer,&DataBytes[CF_EID],Length);
+                    DataReceived=true;
+            }
+
+            if(DEVMGMT_ID == CF_ENDPOINTID(DataBytes[CF_EID])){  //Command Answer)
+                if(DEVMGMT_MSG_AES_DEC_ERROR_IND == DataBytes[MID]){
+                    Length = DataBytes[LENGTH] + OFFSETPAYLOAD + ((CF_TIMESTAMP(DataBytes[CF_EID]) > 0) ? 4 : 0) + ((CF_RSSI(DataBytes[CF_EID]) > 0) ? 1 : 0) + ((CF_CRC16(DataBytes[CF_EID]) > 0) ? 2 : 0) ;
+                    memcpy(pBuffer,&DataBytes[CF_EID],Length);
+                    DataReceived=true;
+                } else {
+                    Length = DataBytes[LENGTH] + OFFSETPAYLOAD;
+                    memcpy(CommandResponse,&DataBytes[CF_EID],Length);
+                    CommandsReceived++;
+                }
+            }
+        }
+    }
+    return DataReceived;
+}
+
+
+
+#ifdef WIN32
+#pragma endregion
+#endif
 
 void * ThreadProc(void *arg) {
     do {
         usleep(SLEEP100MS);
         pthread_mutex_lock(&lockAPI);
-        if(AmberCom != -1) GetDataFromStick(myhandle, myStickID, myInfoFlag);
+        if(StickCom != -1) GetDataFromStick(myhandle, myStickID, myInfoFlag);
         pthread_mutex_unlock(&lockAPI);
-    } while( AmberCom != -1 );
+    } while( StickCom != -1 );
     return 0;
 }
 
+#ifdef WIN32
 #pragma region "Common"
+#endif
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 
-unsigned long wMBus_OpenDevice(char * device, uint16_t stick) {
+
+bool IsAmberStick(uint16_t stick)
+{
+    if((iAMB8465Identifier == stick ) || (iAMB8665Identifier == stick )) return true;
+    return false;
+}
+
+int wMBus_OpenDevice(char * device, uint16_t stick) {
+    myStickID = stick;
+
     if(stick == iM871AIdentifier){
         pthread_mutex_init(&lockAPI, NULL);
         printf("Connect to IMST on port %s\n", device);
-        //load external LIB
-        libHandle = loadLibWMBusHCI();
-        if(0 == libHandle) {
-            printf("Library not found\n");
-            return 0;
-        }
-        return WMBus_OpenDevice(device);
+        StickCom = Stick_OpenDevice(device, 57600);
+        //Start thread
+        pthread_create(&ThreadID, NULL, ThreadProc, NULL);
+        return StickCom;
     }
 
-    if(stick == iAMB8465Identifier) {
+    if(IsAmberStick(stick)) {
         pthread_mutex_init(&lockAPI, NULL);
         printf("Connect to AMBER on port %s\n", device);
-        AmberCom = AMBER_OpenDevice(device, 9600);
-        return (unsigned long) AmberCom;
+        StickCom = Stick_OpenDevice(device, 9600);
+        //Start thread
+        pthread_create(&ThreadID, NULL, ThreadProc, NULL);
+        return StickCom;
     }
     return 0;
 }
-unsigned long wMBus_CloseDevice(unsigned long handle, uint16_t stick) {
-    if(stick == iM871AIdentifier) {
-        WMBus_CloseDevice(handle);
-        unloadLibWMBusHCI(libHandle);
-        pthread_mutex_destroy(&lockAPI);
-        return 1;
-    }
+int wMBus_CloseDevice(int handle, uint16_t stick) {
 
-    if(stick == iAMB8465Identifier) {
-        AMBER_CloseDevice((int)handle);
-        AmberCom = -1; //get thread to terminate
+    if((stick == iM871AIdentifier) || IsAmberStick(stick)) {
+        Stick_CloseDevice((int)handle);
+        StickCom = -1; //get thread to terminate
         usleep(2*SLEEP100MS);
         pthread_join(ThreadID, NULL);
         pthread_mutex_destroy(&lockAPI);
@@ -406,7 +596,7 @@ unsigned long wMBus_CloseDevice(unsigned long handle, uint16_t stick) {
     return 0;
 }
 
-int wMBus_GetStickId(unsigned long handle, uint16_t stick, unsigned long *ID, uint16_t infoflag) {
+int wMBus_GetStickId(int handle, uint16_t stick, uint8_t *ID, uint16_t infoflag) {
     unsigned long dwReturn=(unsigned long)APIERROR;
     unsigned char *pData;
     uint16_t Datasize=BUFFER_SIZE;
@@ -416,13 +606,11 @@ int wMBus_GetStickId(unsigned long handle, uint16_t stick, unsigned long *ID, ui
     if(NULL == ID) return dwReturn;
 
     if(stick == iM871AIdentifier) {
-       if(WMBus_GetDeviceInfo(handle, pData, Datasize)) {
-          *ID = *(pData + 1);
+       if(IMST_GetStickId(handle,ID))
           dwReturn = APIOK;
-        }
     }
 
-    if(stick == iAMB8465Identifier) {
+    if(IsAmberStick(stick)) {
         short sWriteSize=(sizeof(CMD_SERIALNO_REQ_Arr))/(sizeof(uint8_t));
         AMBERCommand((int)handle, CMD_SERIALNO_REQ_Arr, pData, true, sWriteSize, Datasize, infoflag);
         *ID = *(pData + 3);
@@ -433,54 +621,26 @@ int wMBus_GetStickId(unsigned long handle, uint16_t stick, unsigned long *ID, ui
     return dwReturn;
 }
 
-unsigned long wMBus_GetLastError(unsigned long handle, uint16_t stick) {
-    unsigned long dwReturn=0;
 
-    if(stick == iM871AIdentifier) {
-        dwReturn = WMBus_GetLastError(handle);
-        char *pData;
-        pData = (char*)malloc(128);
-        memset(pData, 0, sizeof(unsigned char)*128);
-        WMBus_GetErrorString(dwReturn, pData, 128);
-        printf("GetLastError %ld %s\n", dwReturn, pData);
-        free(pData);
-    }
-    return dwReturn;
-}
-
-unsigned long  wMBus_SwitchMode(unsigned long handle, uint16_t stick, uint8_t Mode, uint16_t infoflag) {
+unsigned long  wMBus_SwitchMode(int handle, uint16_t stick, uint8_t Mode, uint16_t infoflag) {
     unsigned long dwReturn=0;
-    uint16_t Datasize=BUFFER_SIZE;
-    unsigned char *pData;
-    pData = (unsigned char *) malloc(Datasize);
-    memset(pData,0,sizeof(unsigned char)*Datasize);
 
     if((Mode == RADIOT2) || (Mode == RADIOS2)) {
         if(stick == iM871AIdentifier){
-            //set to S2/T2 Mode
-            *(pData +0) = 3;
-            *(pData +1) = 0;    //Other
-            *(pData +2) = Mode; //S2=2   ; T2=4
-            *(pData +3) = 0xB0; //IIFlag2 Auto RSSI, Auto Rx Timestamp, RTC Control
-            *(pData +4) = 1;    //RSSI
-            *(pData +5) = 1;    //Timestamp
-            *(pData +6) = 1;    //RTC Control
-
-            if((dwReturn = WMBus_SetDeviceConfig(handle, pData, 7, false))>0) {
+            if(IMST_SwitchMode(handle,Mode)) {
                   if (infoflag > SILENTMODE) printf("IMST SwitchMode to  %s \n", ((Mode==RADIOT2) ?"T2" : "S2"));
               }
         }
-        if(stick == iAMB8465Identifier) {
+        if(IsAmberStick(stick)) {
             if((dwReturn = AMBER_SwitchRFMode((int)handle, Mode, infoflag))>0) {
                  if (infoflag > SILENTMODE) printf("AMBER SwitchMode to  %s \n", ((Mode==RADIOT2) ?"T2" : "S2"));
             }
         }
     }
-    free(pData);
     return dwReturn;
 }
 
-unsigned long  wMBus_GetRadioMode(unsigned long handle, uint16_t stick, unsigned long *dwD, uint16_t infoflag) {
+unsigned long  wMBus_GetRadioMode(int handle, uint16_t stick, uint8_t *Mode, uint16_t infoflag) {
     unsigned long  dwReturn=(unsigned long)APIERROR;
     unsigned char * pData = (unsigned char*)malloc(BUFFER_SIZE);
     if(NULL == pData)     return 0;
@@ -488,19 +648,11 @@ unsigned long  wMBus_GetRadioMode(unsigned long handle, uint16_t stick, unsigned
     memset(pData, 0, sizeof(unsigned char)*BUFFER_SIZE);
 
     if(stick == iM871AIdentifier) {
-        if(WMBus_GetDeviceConfig(handle,pData,BUFFER_SIZE)) {
-            if (infoflag > SILENTMODE) {
-                switch(*(pData +3)) {
-                case RADIOT2: printf("T2 Mode \n");   break;
-                case RADIOS2: printf("S2 Mode \n");   break;
-                default:      printf("undefined \n"); break;
-                }
-            }
+        if(IMST_GetRadioMode(handle,Mode))
             dwReturn=APIOK;
-            *dwD = *(pData +3);
-        }
+
     }
-    if(stick == iAMB8465Identifier) {
+    if(IsAmberStick(stick)) {
         short mode=0;
         short sWriteSize=(sizeof(CMD_GET_REQ_MODE_Arr))/(sizeof(uint8_t));
         if(AMBERCommand((int)handle, CMD_GET_REQ_MODE_Arr, pData, true, sWriteSize, BUFFER_SIZE, infoflag)) {
@@ -517,47 +669,17 @@ unsigned long  wMBus_GetRadioMode(unsigned long handle, uint16_t stick, unsigned
                 }
             }
             dwReturn=APIOK;
-            *dwD = mode;
+            *Mode = mode;
         }
     }
     free (pData);
     return dwReturn;
 }
 
-unsigned long  wMBus_IsNewData(unsigned long handle, uint16_t stick, uint16_t infoflag) {
-    unsigned long  dwReturn=0;
-    unsigned long  dwNewData=0;
 
-    unsigned char *pData = (unsigned char *) malloc(BUFFER_SIZE);
-    if(NULL == pData) return 0;
-    if(0 == handle) return 0;
-    memset(pData, 0, sizeof(unsigned char)*BUFFER_SIZE);
-
-    if(stick == iM871AIdentifier){
-        if(WMBus_GetSystemStatus(handle, pData, BUFFER_SIZE)) {
-            dwNewData = *((unsigned long*) (pData+23));
-            if(dwFrameCounter == 0)
-                dwReturn = 0; //start condition
-            else
-                dwReturn = dwNewData - dwFrameCounter;
-            if (infoflag > SILENTMODE) printf("wMBus_IsNewData %ld Bytes -> new %ld \n", dwNewData, dwReturn);
-            dwFrameCounter = dwNewData;
-        }
-        else {
-            if (infoflag > SILENTMODE) printf("WMBus_GetSystemStatus returns 0\n");
-        }
-    }
-    free (pData);
-    return dwReturn;
-}
-
-void wMBus_Callback(UINT32 msg, UINT32 param) {
-    if(msg == WMBUS_MSG_HCI_MESSAGE_IND) {
-        GetDataFromStick(myhandle, myStickID, myInfoFlag);
-    }
-}
-
-unsigned long  wMBus_InitDevice(unsigned long handle, uint16_t stick, uint16_t infoflag) {
+unsigned long  wMBus_InitDevice(int handle, uint16_t stick, uint16_t infoflag) {
+    uint8_t Mode;
+    unsigned char * pData = (unsigned char*)malloc(BUFFER_SIZE);
     myInfoFlag = infoflag;
     myStickID = stick;
     //clear Array
@@ -565,33 +687,12 @@ unsigned long  wMBus_InitDevice(unsigned long handle, uint16_t stick, uint16_t i
     memset(MeterData, 0, MAXSLOT*sizeof(ecMBUSData));
 
     if(stick == iM871AIdentifier) {
-        if(!bCallbackRegistered) {
-            bCallbackRegistered=true;
-            myhandle=handle;
-            WMBus_RegisterMsgHandler(&wMBus_Callback);
-        }
-        unsigned char Filter[8];
-        unsigned char Key[16];
-        int iX;
-        for (iX=0;iX<AES_KEYLENGHT_IN_BYTES;iX++)
-            Key[iX] = (unsigned char) iX;
+     //Enable RSSI and Timestamp
+     if(IMST_GetRadioMode(handle,&Mode))
+        IMST_SwitchRFMode(handle,Mode,infoflag);
 
-        Filter[0] = 0x25B3>>8;
-        Filter[1] = 0xB3;
-        Filter[2] = 0x12;
-        Filter[3] = 0x34>>16;
-        Filter[4] = 0x56>>8;
-        Filter[5] = (unsigned char) (0x70+iX);
-        Filter[6] = 0x01;
-        Filter[7] = 0x02;
-
-        //clear all Key Slots
-        for (iX=0;iX<16;iX++) {
-            Filter[5] =  (unsigned char) (0x70+iX);
-            WMBus_ConfigureAESDecryptionKey(handle, iX, Filter, Key);
-        }
     }
-    if(stick == iAMB8465Identifier){
+    if(IsAmberStick(stick)) {
         short sWriteSize=0;
 
        //Enable AES
@@ -604,13 +705,23 @@ unsigned long  wMBus_InitDevice(unsigned long handle, uint16_t stick, uint16_t i
        if(AMBERCommand((int)handle,SET_RSSI_ENABLE_REQ_Arr, NULL, true, sWriteSize, BUFFER_SIZE, infoflag))
             if(infoflag>=SHOWALLDETAILS) printf("RSSI\n");
 
-       //Start thread
-        pthread_create(&ThreadID, NULL, ThreadProc, NULL);
+
+       //Read CMD Format and adjust AmberPayloadOffset
+       AmberPayloadOffset = AMBER_WMBUSDATA_CMDLENGTH;
+       sWriteSize=(sizeof(CMD_GET_REQ_CMDFORMAT))/(sizeof(uint8_t));
+
+       if(AMBERCommand((int)handle,CMD_GET_REQ_CMDFORMAT, pData, true, sWriteSize, BUFFER_SIZE, infoflag)){
+            if(infoflag>=SHOWALLDETAILS) printf("CMD Format %d\n",*(pData + 5));
+            if(1 == *(pData + 5))
+             AmberPayloadOffset = AMBER_WMBUSDATA_INCLUDECMD;
+
+       }
     }
+    free (pData);
     return 1;
 }
 
-unsigned long  wMBus_AddMeter(unsigned long handle,uint16_t stick,int slot,pecwMBUSMeter NewMeter,uint16_t infoflag) {
+unsigned long  wMBus_AddMeter(int handle,uint16_t stick,uint8_t slot,pecwMBUSMeter NewMeter,uint16_t infoflag) {
     int i;
     bool exist=false;
     if(slot<MAXSLOT) {
@@ -644,8 +755,11 @@ unsigned long  wMBus_AddMeter(unsigned long handle,uint16_t stick,int slot,pecwM
             Filter[ 9] = NewMeter->version;
             Filter[10] = NewMeter->type;
 
-            if(stick == iM871AIdentifier) WMBus_ConfigureAESDecryptionKey(handle, (unsigned char)slot, &Filter[3],(unsigned char*) MeterAddr[dwMeter].key);
-            if(stick == iAMB8465Identifier) {
+            if(stick == iM871AIdentifier) {
+                IMST_WriteAESKey(handle,slot,&Filter[3],(uint8_t*) MeterAddr[dwMeter].key);
+            }
+
+            if(IsAmberStick(stick)) {
                 Filter[0]=CMD_SET_AES_KEY_REQ_Arr[0]; //first 3 bytes used for set AES key message
                 Filter[1]=CMD_SET_AES_KEY_REQ_Arr[1];
                 Filter[2]=CMD_SET_AES_KEY_REQ_Arr[2];
@@ -741,14 +855,14 @@ void GetDataFromStick(unsigned long handle, uint16_t stick, uint16_t infoflag) {
 
     pBuffer = (unsigned char *) malloc(sSize);
     memset(pBuffer, 0, sizeof(unsigned char)*sSize);
-    if(stick == iM871AIdentifier)   dwReturn = WMBus_GetHCIMessage(handle, pBuffer, sSize);
-    if(stick == iAMB8465Identifier) dwReturn = AMBER_ReadFrameFromStick(AmberCom, pBuffer+2, sSize, &sSize_frame, infoflag); //AMBER has bytes less in header than IMST: Length(8Bit)->>>Payload
+    if(iM871AIdentifier == stick)   dwReturn = IMST_ReadFrameFromStick(StickCom, pBuffer, sSize,infoflag);
+    if(IsAmberStick(stick))  dwReturn = AMBER_ReadFrameFromStick(StickCom, pBuffer+AmberPayloadOffset, sSize, &sSize_frame, infoflag); //AMBER has bytes less in header than IMST: Length(8Bit)->>>Payload
 
     if(dwReturn) {
         PayLoadLength = *(pBuffer+2);
         if (infoflag > SILENTMODE) printf(" PayloadLength %d ", PayLoadLength);
 
-        if(stick == iM871AIdentifier) {
+        if(iM871AIdentifier == stick) {
             if(*(pBuffer) & 0x20) { //If TimeStamp attached
                 TimeStamp = *( (unsigned long*) (pBuffer+3+PayLoadLength));
                 if (infoflag > SILENTMODE) printf("Timestamp=0x%08X ", (unsigned int)TimeStamp);
@@ -762,18 +876,17 @@ void GetDataFromStick(unsigned long handle, uint16_t stick, uint16_t infoflag) {
             }
         }
 
-        if(stick == iAMB8465Identifier) {
+        if(IsAmberStick(stick)) {
             //RSSI is enabled and the last byte of the pBuffer
             uint8_t RSSIfromBuf = pBuffer[2+PayLoadLength]; //
             if(RSSIfromBuf>=128)
                 RSSI=(int8_t)(((double)RSSIfromBuf-256.0)/2.0-74.0);
             else if(RSSIfromBuf<128){
                 RSSI=(int8_t)((double)RSSIfromBuf/2.0-74.0);}
-            else{
+            else {
                 RSSI=0;
             }
         }
-        if (infoflag > SILENTMODE) printf("\n");
 
         ecMBUSData   RFData;    //struct to store value + rssi + timestamp
         ecwMBUSMeter RFSource;  //struct to store Source Address
@@ -807,6 +920,11 @@ void GetDataFromStick(unsigned long handle, uint16_t stick, uint16_t infoflag) {
             (*(pBuffer+OFFSETPAYLOAD+OFFSETMBUSID+1)<<8)+
              *(pBuffer+OFFSETPAYLOAD+OFFSETMBUSID);
 
+        if (infoflag > SILENTMODE)
+            printf(" ID=%08X ", RFData.mbusID);
+
+        if (infoflag > SILENTMODE) printf("\n");
+
         uint8_t DIF=0;
         uint8_t VIF=0;
 
@@ -835,13 +953,12 @@ void GetDataFromStick(unsigned long handle, uint16_t stick, uint16_t infoflag) {
         if((PayLoadLength < WMBUS_PAYLOADLENGTH_ENCRYPTED) || bIsDecrypted ) {
             if((WMBUS_MSGLENGTH_AESERROR == PayLoadLength) && (*(pBuffer+1) == WMBUS_MSGID_AES_DECRYPTIONERROR)) {
                 RFData.pktInfo=PACKET_DECRYPTIONERROR;
-            }
-            else {
+            } else {
                 if(stick == iM871AIdentifier) {
                     if(PayLoadLength > WMBUS_PAYLOADLENGTH_DEFAULT)
                         RFData.pktInfo = PACKET_WAS_ENCRYPTED;
                 }
-                if(stick == iAMB8465Identifier) {
+                if(IsAmberStick(stick)) {
                     if(PayLoadLength > (WMBUS_PAYLOADLENGTH_DEFAULT+1)) //RSSI is attached
                         RFData.pktInfo = PACKET_WAS_ENCRYPTED;
                 }
@@ -888,8 +1005,7 @@ void GetDataFromStick(unsigned long handle, uint16_t stick, uint16_t infoflag) {
                     RFData.utcnt_pic = *(pBuffer+Offset++);
                 }
             }
-        }
-        else {
+        } else {
             //iPayLoadLength show a encrypted message
             if(!bIsDecrypted) {
                 RFData.pktInfo = PACKET_DECRYPTIONERROR;
@@ -933,4 +1049,6 @@ unsigned long wMBus_GetData4Meter(int Index, psecMBUSData data) {
     MeterHasData &= ~(0x01<<Index); //clear Bit
     return dwReturn;
 }
+#ifdef WIN32
 #pragma endregion
+#endif

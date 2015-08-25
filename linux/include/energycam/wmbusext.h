@@ -8,6 +8,7 @@
 #define AES_KEYLENGHT_IN_BYTES     16
 #define iM871AIdentifier           0x33
 #define iAMB8465Identifier         0x27
+#define iAMB8665Identifier         0x53
 
 //Returns
 #define APIERROR   (-1)
@@ -24,15 +25,15 @@
 #define PACKET_DECRYPTIONERROR     0x08
 
 //wMBus handling
-unsigned long wMBus_OpenDevice(char* device, uint16_t stick);
-unsigned long wMBus_CloseDevice( unsigned long handle, uint16_t stick);
-int           wMBus_GetStickId(  unsigned long handle, uint16_t stick, unsigned long* ID, uint16_t infoflag);
+int wMBus_OpenDevice(char* device, uint16_t stick);
+int wMBus_CloseDevice( int handle, uint16_t stick);
+int           wMBus_GetStickId(  int handle, uint16_t stick, uint8_t* ID, uint16_t infoflag);
 
-unsigned long wMBus_InitDevice(  unsigned long handle, uint16_t stick, uint16_t infoflag);
+unsigned long wMBus_InitDevice(  int handle, uint16_t stick, uint16_t infoflag);
 
-unsigned long wMBus_SwitchMode(  unsigned long handle, uint16_t stick, uint8_t Mode, uint16_t infoflag);
-unsigned long wMBus_GetRadioMode(unsigned long handle, uint16_t stick, unsigned long* dwD, uint16_t infoflag);
-unsigned long wMBus_AddMeter(    unsigned long handle, uint16_t stick, int slot, pecwMBUSMeter NewMeter, uint16_t infoflag);
+unsigned long wMBus_SwitchMode(  int handle, uint16_t stick, uint8_t Mode, uint16_t infoflag);
+unsigned long wMBus_GetRadioMode(int handle, uint16_t stick, uint8_t* Mode, uint16_t infoflag);
+unsigned long wMBus_AddMeter(    int handle, uint16_t stick, uint8_t slot, pecwMBUSMeter NewMeter, uint16_t infoflag);
 int           wMBus_RemoveMeter(  int Index);
 unsigned long wMBus_GetData4Meter(int Index, psecMBUSData data);
 

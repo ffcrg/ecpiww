@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <signal.h>
 
 #include <unistd.h>
 #include <stdbool.h>
@@ -50,28 +51,74 @@ int Log2CSVFile(const char *path,  double Value) {
     return APIOK;
 }
 
+static struct termios orig_term_attr;
 
-int getkey(void) {
-    int character;
-    struct termios orig_term_attr;
-    struct termios new_term_attr;
+// Save current stdin setting for later restore
+void saveStdin() {
+    /* Make sure stdin is a terminal. */
+    if (!isatty (STDIN_FILENO)) {
+      fprintf (stderr, "Not a terminal.\n");
+      exit (EXIT_FAILURE);
+    }
 
     /* set the terminal to raw mode */
     tcgetattr(fileno(stdin), &orig_term_attr);
-    memcpy(&new_term_attr, &orig_term_attr, sizeof(struct termios));
+}
+
+// Restore stdin on exit
+void restoreStdin(void) {
+    /* restore the original terminal attributes */
+    tcsetattr(fileno(stdin), TCSANOW, &orig_term_attr);
+}
+
+// setup the stdin stream to read a character without blocking
+void setupStdin(void) {
+    struct termios new_term_attr;
+
+    tcgetattr(fileno(stdin), &new_term_attr);
     new_term_attr.c_lflag &= ~(ECHO|ICANON);
     new_term_attr.c_cc[VTIME] = 0;
     new_term_attr.c_cc[VMIN]  = 0;
     tcsetattr(fileno(stdin), TCSANOW, &new_term_attr);
+}
 
-    /* read a character from the stdin stream without blocking */
-    /*   returns EOF (-1) if no character is available */
-    character = fgetc(stdin);
+// By default, stdout is line buffered, stderr is none buffered and file is completely buffered.
+// Make stdout unbuffered which allows to output partial lines
+void setupStdout(void) {
+    setbuf(stdout, NULL); // stdout is restored on program exit automatically
+}
 
-    /* restore the original terminal attributes */
-    tcsetattr(fileno(stdin), TCSANOW, &orig_term_attr);
+void intHandler(int signal) {
+    exit(1); // calls exit handler which is set by atexit()
+}
 
+// setup the stdin stream to read a character without blocking
+void setupConsole(void) {
+    saveStdin();
+    setupStdin();
+    setupStdout();
+    atexit(restoreStdin); // setup callback to restore console on exit
+
+    // Register a signal handel which catch CTRL-C which stops the program and restore the console
+    struct sigaction act;
+    act.sa_handler = intHandler;
+    sigaction(SIGINT, &act, NULL);
+}
+
+// Returns EOF (-1) if no character is available
+signed char getkey(void) {
+    char character = -1;
+    if (read (STDIN_FILENO, &character, 1) <= 0)
+        character = -1;
     return character;
+}
+
+// Return true when something different from only '\n' has been enterred
+bool getLine(char* inputBuf, int inputBufSize) {
+    restoreStdin();
+    (void)fgets(inputBuf, inputBufSize, stdin);
+    setupStdin();
+    return inputBuf[0] != '\n';
 }
 
 static int iTime;
@@ -113,6 +160,7 @@ void Intro(void) {
     printf("################################################################\n");
     Colour(0, true);
     printf("   Usage\n");
+    printf("   h   : Help (this screen)\n");
     printf("   s   : Use S2 mode\n");
     printf("   t   : Use T2 mode\n");
     printf("   a   : Add meter\n");
@@ -132,11 +180,12 @@ void IntroShowParam(void) {
     Colour(0,true);
     printf("   Commandline options:\n");
     printf("   ./ecpiww -f /home/user/ecdata -p 0 -m S\n");
-    printf("   -f <dir> : save readings to <dir>/<wM-Bus Ident>.dat\n");
-    printf("   -l VZ    : log to (VZ)Volkszähler, (XML) XMLFile, (CSV) CSV File \n");
-    printf("   -p 0     : Portnumber 0 -> /dev/ttyUSB0\n");
-    printf("   -m S     : S2 mode \n");
-    printf("   -i       : show detailed infos \n\n");
+    printf("   -f <dir>           : save readings to <dir>/<wM-Bus Ident>.dat\n");
+    printf("   -l VZ              : log to (VZ)Volkszaehler, (XML) XMLFile, (CSV) CSV File \n");
+    printf("   -p 0               : Portnumber 0 -> /dev/ttyUSB0     (as alternativ to -d)\n");
+    printf("   -d </path/to/dev>  : e.g. /dev/tty.usbserial-27019A35 (as alternativ to -p)\n");
+    printf("   -m S               : S2 mode \n");
+    printf("   -i                 : show detailed infos \n\n");
 }
 
 void ErrorAndExit(const char *info) {
@@ -250,8 +299,7 @@ unsigned int Log2XMLFile(const char *path, double Reading, ecMBUSData *rfData) {
             sprintf(szBuf, "<ENERGYCAMOCR>\n");
             memcpy(pXML, szBuf, strlen(szBuf)); dwSize+=strlen(szBuf); pXML+=strlen(szBuf);
         }
-    }
-    else {
+    } else {
         //new File
         pXMLMem = (unsigned char *) malloc(XMLBUFFER);
         memset(pXMLMem, 0, sizeof(unsigned char)*XMLBUFFER);
@@ -284,8 +332,7 @@ unsigned int Log2XMLFile(const char *path, double Reading, ecMBUSData *rfData) {
 
         if(dwSizeIn>0) {
             memcpy(pXML, pXMLTop, dwSizeIn);
-        }
-        else {
+        } else {
             sprintf(szBuf, "</ENERGYCAMOCR>\n"); memcpy(pXML, szBuf, strlen(szBuf)); dwSize+=strlen(szBuf); pXML+=strlen(szBuf);
         }
 
@@ -293,8 +340,7 @@ unsigned int Log2XMLFile(const char *path, double Reading, ecMBUSData *rfData) {
             fwrite(pXMLMem, dwSizeIn+dwSize, 1, hFile);
             fclose(hFile);
             chmod(path, 0666);
-        }
-        else {
+        } else {
             fprintf(stderr, "Cannot write to >%s<\n", path);
         }
     }
@@ -314,15 +360,18 @@ int Log2File(char *DataPath, uint16_t mode, uint16_t meterindex, uint16_t infofl
     struct tm curtime;
 
     switch(mode) {
-        case LOGTOCSV : sprintf(param, "/var/www/ecpiww/data/ecpiwwM%d.csv", meterindex+1);
+        case LOGTOCSV : if (strlen(DataPath) == 0) {
+                            sprintf(param, "/var/www/ecpiww/data/ecpiwwM%d.csv", meterindex+1);
+                        } else {
+                            sprintf(param, "%s/ecpiwwM%d.csv", DataPath, meterindex+1);
+                        }
                         Log2CSVFile(param, metervalue); //log kWh
                         return APIOK;
                         break;
         case LOGTOXML : if (strlen(DataPath) == 0) {
                             getcwd(param, sizeof(param));
                             sprintf(param, "%s/%08X.xml", param, ident);
-                        }
-                        else {
+                        } else {
                             sprintf(param, "%s/%08X.xml", DataPath, ident);
                         }
                         Log2XMLFile(param, metervalue, rfData); //log kWh
@@ -337,8 +386,7 @@ int Log2File(char *DataPath, uint16_t mode, uint16_t meterindex, uint16_t infofl
 
                             if(0x100 == ret) {
                                 if(infoflag > SILENTMODE) printf("%02d:%02d Calling %s \n", curtime.tm_hour, curtime.tm_min, param);
-                            }
-                            else {
+                            } else {
                                 if(infoflag > SILENTMODE) printf("%02d:%02d Calling %s returned with 0x%X\n", curtime.tm_hour, curtime.tm_min, param, ret);
                             }
                         }
@@ -348,8 +396,7 @@ int Log2File(char *DataPath, uint16_t mode, uint16_t meterindex, uint16_t infofl
                         if (strlen(DataPath) == 0)  {
                             getcwd(param, sizeof(param));
                             sprintf(datFile, "%s/%08X.dat", param, ident);
-                        }
-                        else{
+                        } else {
                             sprintf(datFile, "%s/%08X.dat", DataPath, ident);
                         }
                         if ((hDatFile = fopen(datFile, "wb")) != NULL) {
@@ -363,13 +410,13 @@ int Log2File(char *DataPath, uint16_t mode, uint16_t meterindex, uint16_t infofl
 }
 
 //support commandline
-int parseparam(int argc, char *argv[], char *filepath, uint16_t *infoflag, uint16_t *Port, uint16_t *Mode, uint16_t *LogMode) {
+int parseparam(int argc, char *argv[], char *filepath, uint16_t *infoflag, uint16_t *Port, char *devicepath, uint16_t *Mode, uint16_t *LogMode) {
     int c;
 
     if((NULL == LogMode) || (NULL == infoflag) || (NULL == Port)  || (NULL == Mode) ) return 0;
 
     opterr = 0;
-    while ((c = getopt (argc, argv, "f:hil:m:p:x")) != -1) {
+    while ((c = getopt (argc, argv, "f:hil:m:p:d:x")) != -1) {
         switch (c) {
             case 'f':
                 if (NULL != optarg) {
@@ -389,6 +436,11 @@ int parseparam(int argc, char *argv[], char *filepath, uint16_t *infoflag, uint1
             case 'p':
                 if (NULL != optarg) {
                     *Port = atoi(optarg);
+                }
+                break;
+            case 'd':
+                if (NULL != optarg) {
+                    strcpy(devicepath,optarg);
                 }
                 break;
             case 'm':
@@ -417,7 +469,7 @@ int parseparam(int argc, char *argv[], char *filepath, uint16_t *infoflag, uint1
 
 //////////////////////////////////////////////
 int main(int argc, char *argv[]) {
-    int      key    = 0;
+    signed char key    = -1;
     int      iCheck = 0;
     int      iX;
     int      iK;
@@ -426,11 +478,12 @@ int main(int argc, char *argv[]) {
     char     CommandlineDatPath[_MAX_PATH];
     double   csvValue;
     int      Meters = 0;
-    unsigned long ReturnValue;
+    uint8_t  ReturnValue;
     FILE    *hDatFile;
 
     uint16_t InfoFlag = SILENTMODE;
     uint16_t Port = 0;
+    char     DevicePath[_MAX_PATH] = "";
     uint16_t Mode = RADIOT2;
     uint16_t LogMode = LOGTOCSV;
     uint16_t wMBUSStick = iM871AIdentifier;
@@ -438,13 +491,15 @@ int main(int argc, char *argv[]) {
     char     comDeviceName[100];
     int      hStick;
 
+    setupConsole();
+
     ecwMBUSMeter ecpiwwMeter[MAXMETER];
     memset(ecpiwwMeter, 0, MAXMETER*sizeof(ecwMBUSMeter));
 
     memset(CommandlineDatPath, 0, _MAX_PATH*sizeof(char));
 
     if(argc > 1)
-      parseparam(argc, argv, CommandlineDatPath, &InfoFlag, &Port, &Mode, &LogMode);
+      parseparam(argc, argv, CommandlineDatPath, &InfoFlag, &Port, DevicePath, &Mode, &LogMode);
 
     //read config back
     if ((hDatFile = fopen("meter.dat", "rb")) != NULL) {
@@ -456,7 +511,11 @@ int main(int argc, char *argv[]) {
 
     //open wM-Bus Stick #1
     wMBUSStick = iM871AIdentifier;
-    sprintf(comDeviceName, "/dev/ttyUSB%d", Port);
+    if (strlen(DevicePath))
+        sprintf(comDeviceName, "%s", DevicePath);
+    else
+        sprintf(comDeviceName, "/dev/ttyUSB%d", Port);
+
     hStick = wMBus_OpenDevice(comDeviceName, wMBUSStick);
 
     if(hStick <= 0) { //try 2.Stick
@@ -466,27 +525,28 @@ int main(int argc, char *argv[]) {
     }
 
     if(hStick <= 0) {
-         ErrorAndExit("no wM-Bus Stick not found\n");
+         ErrorAndExit("wM-Bus Stick found\n");
     }
 
     if((iM871AIdentifier == wMBUSStick) && (APIOK == wMBus_GetStickId(hStick, wMBUSStick, &ReturnValue, InfoFlag)) && (iM871AIdentifier == ReturnValue)) {
         if(InfoFlag > SILENTMODE) {
             printf("IMST iM871A Stick found\n");
         }
-    }
-    else {
+    } else {
         wMBus_CloseDevice(hStick, wMBUSStick);
         //try 2. Stick
         wMBUSStick = iAMB8465Identifier;
         hStick = wMBus_OpenDevice(comDeviceName,wMBUSStick);
-        if((iAMB8465Identifier == wMBUSStick) && (APIOK == wMBus_GetStickId(hStick, wMBUSStick, &ReturnValue, InfoFlag)) && (iAMB8465Identifier == ReturnValue)) {
-            if(InfoFlag > SILENTMODE) {
-                printf("Amber Stick found\n");
+        if((iAMB8465Identifier == wMBUSStick) && (APIOK == wMBus_GetStickId(hStick, wMBUSStick, &ReturnValue, InfoFlag)) && (0 != ReturnValue)) {
+            if((iAMB8465Identifier == ReturnValue) && (InfoFlag > SILENTMODE)) {
+                printf("Amber 8465-M found ");
             }
-        }
-        else {
+            if((iAMB8665Identifier == ReturnValue) && (InfoFlag > SILENTMODE)) {
+                printf("Amber 8665-M found ");
+            }
+        } else {
             wMBus_CloseDevice(hStick, wMBUSStick);
-            ErrorAndExit("no wM-Bus Stick not found\n");
+            ErrorAndExit("wM-Bus Stick not found\n");
         }
     }
 
@@ -496,9 +556,10 @@ int main(int argc, char *argv[]) {
         }
         if (ReturnValue != Mode)
            wMBus_SwitchMode(hStick, wMBUSStick, (uint8_t) Mode, InfoFlag);
-    }
-    else
+    } else {
+        wMBus_CloseDevice(hStick, wMBUSStick);
         ErrorAndExit("wM-Bus Stick not found\n");
+    }
 
     wMBus_InitDevice(hStick, wMBUSStick, InfoFlag);
 
@@ -506,18 +567,12 @@ int main(int argc, char *argv[]) {
 
     IsNewMinute();
 
-    while (!((key == 0x1B) || (key == 'q'))) {
-        usleep(500*1000);   //sleep 500ms
+    while (true) {
+        usleep(500*1000);       //sleep 500ms
 
         key = getkey();
 
-        /*key =fgetc(stdin);
-        while(key!='\n' && fgetc(stdin) != '\n');
-        printf("Key=%d",key);*/
-
-
-        //add a new Meter
-        if (key == 'a') {
+        if (key == 'a') {       //add a new Meter
             iX=0;
             while(0 != ecpiwwMeter[iX].manufacturerID) {
                 iX++;
@@ -528,11 +583,11 @@ int main(int argc, char *argv[]) {
             if(iX < MAXMETER) {
                 printf("\nAdding Meter #%d \n",iX+1);
                 printf("Enter Meter Ident (12345678): ");
-                if(fgets(KeyInput, _MAX_PATH,stdin))
+                if(getLine(KeyInput, _MAX_PATH))
                     ecpiwwMeter[iX].ident=CalcUIntBCD(atoi(KeyInput));
 
                 printf("Enter Meter Type (2 = Electricity ; 3 = Gas ; 7 = Water) : ");
-                if(fgets(KeyInput, _MAX_PATH,stdin)) {
+                if(getLine(KeyInput, _MAX_PATH)) {
                     switch(atoi(KeyInput)) {
                         case METER_GAS  :        ecpiwwMeter[iX].type = METER_GAS;          break;
                         case METER_WATER:        ecpiwwMeter[iX].type = METER_WATER;        break;
@@ -544,7 +599,7 @@ int main(int argc, char *argv[]) {
                 ecpiwwMeter[iX].version        = 0x01;
 
                 printf("Enter Key (0 = Zero ; 1 = Default ; 2 = Enter the 16 Bytes) : ");
-                if(fgets(KeyInput, _MAX_PATH, stdin)) {
+                if(getLine(KeyInput, _MAX_PATH)) {
                     switch(atoi(KeyInput)) {
                         case 0  : for(iK = 0; iK<AES_KEYLENGHT_IN_BYTES; iK++)
                                     ecpiwwMeter[iX].key[iK] = 0;
@@ -557,7 +612,7 @@ int main(int argc, char *argv[]) {
 
                         case 2  :
                                 printf("Key:");
-                                fgets(KeyInput, _MAX_PATH, stdin);
+                                getLine(KeyInput, _MAX_PATH);
                                     for(iK = 0; iK<AES_KEYLENGHT_IN_BYTES; iK++)
                                         ecpiwwMeter[iX].key[iK] = 0;
                                 if((strlen(KeyInput)-1) < AES_KEYLENGHT_IN_BYTES*2)
@@ -580,16 +635,13 @@ int main(int argc, char *argv[]) {
                 UpdateMetersonStick(hStick, wMBUSStick, Meters, ecpiwwMeter, InfoFlag);
             } else
                 printf("All %d Meters defined\n", MAXMETER);
-        }
 
-        // display list of meters
-        if(key == 'l')
+        } else if(key == 'l') {  // display list of meters
             DisplayListofMeters(Meters, ecpiwwMeter);
 
-        //remove a meter from the list
-        if(key == 'r') {
+        } else if(key == 'r') { //remove a meter from the list
             printf("Enter Meterindex to remove: ");
-            if(fgets(KeyInput, _MAX_PATH, stdin)) {
+            if(getLine(KeyInput, _MAX_PATH)) {
                 iX = atoi(KeyInput);
                 if(iX-1 <= Meters-1) {
                     printf("Remove Meter #%d\n",iX);
@@ -600,18 +652,13 @@ int main(int argc, char *argv[]) {
                  else
                     printf("Index not defined\n");
             }
-        }
-
-        // switch to S2 mode
-        if(key == 's')
+        } else if(key == 's') {  // switch to S2 mode
             wMBus_SwitchMode( hStick,wMBUSStick, RADIOS2,InfoFlag);
 
-        // switch to T2 mode
-        if(key == 't')
+        } else if(key == 't') {  // switch to T2 mode
             wMBus_SwitchMode( hStick,wMBUSStick, RADIOT2,InfoFlag);
 
-        //check whether there are new data from the EnergyCams
-        if (IsNewMinute() || (key == 'u')) {
+        } else if (IsNewMinute() || (key == 'u')) { //check whether there are new data from the EnergyCams
             if(wMBus_GetMeterDataList() > 0) {
                 iCheck = 0;
                 for(iX=0; iX<Meters; iX++) {
@@ -659,7 +706,16 @@ int main(int argc, char *argv[]) {
                   if((++iCheck % 20) == 0) printf("\n");
                 }
             }
+        } else if (key == '\e' || key == 'q') { // '\e' = ESC = 0x1B
+            break;
+        } else if(key == 'h') {
+            Intro();
+        } else if (key > 0) {
+            printf("\n***Unknown command >%c<\n", key);
+            Intro();
         }
+        key = -1; // destroy key
+
     } // end while
 
     if(hStick >0) wMBus_CloseDevice(hStick, wMBUSStick);
