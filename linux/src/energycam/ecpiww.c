@@ -379,7 +379,7 @@ int Log2File(char *DataPath, uint16_t mode, uint16_t meterindex, uint16_t infofl
                         break;
         case LOGTOVZ :  if( access( "add2vz.sh", F_OK ) != -1 ) {
                             memset(param, '\0', sizeof(FILENAME_MAX));
-                            sprintf(param, "./add2vz.sh %d %ld ", meterindex+1, (long int)metervalue*1000);
+                            sprintf(param, "./add2vz.sh %d %ld ", meterindex+1, (long int)(metervalue*1000));
                             int ret=system(param);
                             t = time(NULL);
                             curtime = *localtime(&t);
@@ -525,7 +525,7 @@ int main(int argc, char *argv[]) {
     }
 
     if(hStick <= 0) {
-         ErrorAndExit("wM-Bus Stick found\n");
+         ErrorAndExit("wM-Bus Stick not found\n");
     }
 
     if((iM871AIdentifier == wMBUSStick) && (APIOK == wMBus_GetStickId(hStick, wMBUSStick, &ReturnValue, InfoFlag)) && (iM871AIdentifier == ReturnValue)) {

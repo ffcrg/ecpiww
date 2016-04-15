@@ -28,9 +28,14 @@ $sudo apt-get install screen  (screen bash ; ctrl a,d - run app in additional te
 
 
 
-///////////////////////////////////////
-// connect the raspberry pi to a wLAN//
-///////////////////////////////////////
+//////////////////////////////////////////////////////////
+// connect the raspberry pi to a wLAN                   //
+//////////////////////////////////////////////////////////
+// A wifi connection is not needed to run ecpiww.       //
+// If you want to run the raspberry connected via LAN   //
+// or with monitor and keyboard you can skip this step. //
+//////////////////////////////////////////////////////////
+
 // if you have connected a monitor and keyboard to your raspberry 
 // - start the GUI with startx
 // - use wpa_gui to setup the WLAN access (http://learn.adafruit.com/adafruits-raspberry-pi-lesson-3-network-setup/setting-up-wifi-with-raspbian)
